@@ -1,0 +1,25 @@
+[package]
+name = "texthook-injector32"
+version = "0.1.0"
+edition = "2021"
+description = "32-bit texthook.dll injector helper for the 64-bit Textractor host"
+
+# 编译（需先安装 32 位目标）：
+#   rustup target add i686-pc-windows-msvc
+#   cargo build --release --target i686-pc-windows-msvc
+# 产物：target/i686-pc-windows-msvc/release/texthook-injector32.exe
+# 部署：放到主程序同目录的 x86/ 子目录（与 x86 texthook.dll 一起）。
+
+[dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_Threading",
+] }
+
+[[bin]]
+name = "texthook-injector32"
+path = "src/main.rs"

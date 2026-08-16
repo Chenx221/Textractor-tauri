@@ -12,9 +12,25 @@
   "app": {
     "windows": [
       {
-        "title": "textractor-tauri",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "Textractor",
+        "width": 1100,
+        "height": 850,
+        "transparent": true
+      },
+      {
+        "label": "extra",
+        "title": "Textractor Extra",
+        "width": 680,
+        "height": 240,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": true,
+        "maximizable": false,
+        "visible": false,
+        "shadow": false
       }
     ],
     "security": {
@@ -30,6 +46,34 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "languages": [
+          "SimpChinese",
+          "TradChinese",
+          "English",
+          "Japanese",
+          "Korean",
+          "French",
+          "German",
+          "Spanish",
+          "SpanishInternational",
+          "Russian",
+          "Italian",
+          "Portuguese",
+          "PortugueseBR",
+          "Dutch",
+          "Turkish",
+          "Arabic",
+          "Vietnamese",
+          "Ukrainian",
+          "Bulgarian",
+          "Swedish",
+          "Norwegian"
+        ],
+        "displayLanguageSelector": true
+      }
+    }
   }
 }
