@@ -34,6 +34,9 @@
     "translation": "คำแปล",
     "translating": "กำลังแปล...",
     "copy": "คัดลอก",
+    "copyOriginal": "คัดลอกต้นฉบับ",
+    "copyTranslation": "คัดลอกคำแปล",
+    "copyBoth": "คัดลอกต้นฉบับและคำแปล",
     "delete": "ลบ",
     "translate": "แปล",
     "retry": "ลองใหม่",
@@ -41,7 +44,8 @@
     "fromCache": "จากแคช",
     "clearOutput": "ล้างเอาต์พุตของเธรดปัจจุบัน",
     "googleSearch": "ค้นหาข้อความที่เลือกใน Google",
-    "openDevtools": "เปิดเครื่องมือนักพัฒนา"
+    "openDevtools": "เปิดเครื่องมือนักพัฒนา",
+    "jumpToBottom": "ไปด้านล่าง"
   },
   "settings": {
     "title": "ตั้งค่า",
@@ -95,6 +99,8 @@
     "effectAero": "Aero (เบลอ)",
     "effectAcrylic": "อะคริลิก",
     "effectMica": "ไมกา",
+    "effectTint": "สีอ่อน",
+    "effectTintOpacity": "ความทึบสีอ่อน",
     "windowOpacity": "ความทึบพื้นหลัง",
     "backgroundImage": "ภาพพื้นหลัง",
     "backgroundImageOpacity": "ความทึบภาพพื้นหลัง",

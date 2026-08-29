@@ -34,6 +34,9 @@
     "translation": "Çeviri",
     "translating": "Çevriliyor...",
     "copy": "Kopyala",
+    "copyOriginal": "Orijinali kopyala",
+    "copyTranslation": "Çeviriyi kopyala",
+    "copyBoth": "Orijinal ve çeviriyi kopyala",
     "delete": "Sil",
     "translate": "Çevir",
     "retry": "Yeniden dene",
@@ -41,7 +44,8 @@
     "fromCache": "önbellekten",
     "clearOutput": "Geçerli iş parçacığının çıktısını temizle",
     "googleSearch": "Seçili metni Google'da ara",
-    "openDevtools": "Geliştirici araçlarını aç"
+    "openDevtools": "Geliştirici araçlarını aç",
+    "jumpToBottom": "En alta git"
   },
   "settings": {
     "title": "Ayarlar",
@@ -95,6 +99,8 @@
     "effectAero": "Aero (Bulanıklık)",
     "effectAcrylic": "Akrilik",
     "effectMica": "Mika",
+    "effectTint": "Ton rengi",
+    "effectTintOpacity": "Ton opaklığı",
     "windowOpacity": "Arka plan opaklığı",
     "backgroundImage": "Arka plan resmi",
     "backgroundImageOpacity": "Arka plan resmi opaklığı",

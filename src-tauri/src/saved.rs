@@ -1,10 +1,24 @@
 //! SavedGames.txt / SavedHooks.txt 持久化与自动 attach（等价于原版
-//! `ProcessConnected` / `AttachSavedProcesses` / `SaveHooks` 的文件部分）。
+//! `AttachSavedProcesses` / `SaveHooks` 的文件部分）。
+//!
+//! 与原版的差异说明：原版在 `ProcessConnected` 时会把进程路径追加进
+//! SavedGames.txt，再由 `Auto attach`（默认关闭）决定是否自动附加；而
+//! `Auto attach (saved only)`（默认开启）只自动附加 SavedHooks.txt 里的进程。
+//! 本实现没有暴露这两个开关，因此只保留「保存过 hook 才自动附加」的行为：
+//! 手动附加不写任何配置文件，也不会在重启后自动附加。
 
 use std::path::Path;
 
 const GAME_SAVE_FILE: &str = "SavedGames.txt";
 const HOOK_SAVE_FILE: &str = "SavedHooks.txt";
+
+/// 保存时记录的当前文本线程（等价于原版 SaveHooks 里的 `|ctx:ctx2:code`）。
+#[derive(Clone, Debug)]
+pub struct SavedThread {
+    pub ctx: u64,
+    pub ctx2: u64,
+    pub code: String,
+}
 
 fn append_line(dir: &Path, file: &str, line: &str) {
     let path = dir.join(file);
@@ -22,18 +36,25 @@ fn append_line(dir: &Path, file: &str, line: &str) {
     let _ = std::fs::write(&path, content);
 }
 
-/// 进程连接时记录（等价于原版把进程路径追加到 SavedGames.txt）。
-pub fn record_game(dir: &Path, exe_path: &str) {
-    append_line(dir, GAME_SAVE_FILE, exe_path);
-}
-
 /// 保存某个进程的 hook 码（等价于原版 SaveHooks）。
-pub fn save_hooks(dir: &Path, exe_path: &str, codes: &[String]) {
-    if codes.is_empty() {
+/// `current_thread` 为点击保存时正在查看的文本线程（非控制台/剪贴板），
+/// 保存后自动附加会恢复到该线程。
+pub fn save_hooks(
+    dir: &Path,
+    exe_path: &str,
+    codes: &[String],
+    current_thread: Option<&SavedThread>,
+) {
+    if codes.is_empty() && current_thread.is_none() {
         return;
     }
-    let line = format!("{} , {}", exe_path, codes.join(" , "));
-    append_line(dir, HOOK_SAVE_FILE, &line);
+    let mut parts: Vec<String> = Vec::with_capacity(1 + codes.len() + 1);
+    parts.push(exe_path.to_string());
+    parts.extend(codes.iter().cloned());
+    if let Some(t) = current_thread {
+        parts.push(format!("|{}:{}:{}", t.ctx, t.ctx2, t.code));
+    }
+    append_line(dir, HOOK_SAVE_FILE, &parts.join(" , "));
 }
 
 /// 读取该进程最后一次保存的 hook 码（忽略 "|ctx:ctx2:code" 这类保存的当前线程信息）。
@@ -51,6 +72,36 @@ pub fn saved_hook_codes_for(dir: &Path, exe_path: &str) -> Vec<String> {
         .filter(|part| !part.trim().is_empty() && !part.starts_with('|'))
         .map(|part| part.trim().to_string())
         .collect()
+}
+
+/// 读取该进程最后一次保存的当前线程信息（`|ctx:ctx2:code`）。
+pub fn saved_thread_for(dir: &Path, exe_path: &str) -> Option<SavedThread> {
+    let content = std::fs::read_to_string(dir.join(HOOK_SAVE_FILE)).ok()?;
+    let line = content.lines().rev().find(|l| l.starts_with(exe_path))?;
+    for part in line.split(" , ").skip(1) {
+        let part = part.trim();
+        if let Some(rest) = part.strip_prefix('|') {
+            return parse_saved_thread(rest);
+        }
+    }
+    None
+}
+
+/// 解析 `ctx:ctx2:code`。code 本身可能包含 ':'（模块相对形式），只切前两个 ':'。
+fn parse_saved_thread(rest: &str) -> Option<SavedThread> {
+    let (ctx_s, after_ctx) = rest.split_once(':')?;
+    let (ctx2_s, code) = after_ctx.split_once(':')?;
+    let ctx = ctx_s.trim().parse::<u64>().ok()?;
+    let ctx2 = ctx2_s.trim().parse::<u64>().ok()?;
+    let code = code.trim();
+    if code.is_empty() {
+        return None;
+    }
+    Some(SavedThread {
+        ctx,
+        ctx2,
+        code: code.to_string(),
+    })
 }
 
 /// 进程 exe 全路径（用 sysinfo 枚举）。
@@ -79,19 +130,12 @@ pub fn forget(dir: &Path, exe_path: &str) {
     }
 }
 
-/// 自动 attach：返回需要注入的进程 PID（匹配 SavedGames/SavedHooks 里的 exe 路径）。
+/// 自动 attach：返回需要注入的进程 PID（只匹配 SavedHooks.txt 里保存过 hook 的
+/// 进程路径——与原版 `Auto attach (saved only)` 一致）。
 pub fn auto_attach_targets(dir: &Path) -> Vec<u32> {
     use sysinfo::System;
 
     let mut targets = std::collections::HashSet::new();
-    if let Ok(content) = std::fs::read_to_string(dir.join(GAME_SAVE_FILE)) {
-        for line in content.lines() {
-            let line = line.trim();
-            if !line.is_empty() {
-                targets.insert(line.to_string());
-            }
-        }
-    }
     if let Ok(content) = std::fs::read_to_string(dir.join(HOOK_SAVE_FILE)) {
         for line in content.lines() {
             if let Some(exe) = line.split(" , ").next() {

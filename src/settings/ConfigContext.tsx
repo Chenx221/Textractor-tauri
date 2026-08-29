@@ -260,6 +260,8 @@ const DEFAULT_CONFIG: AppConfig = {
   translateTimeoutMs: 10000,
   window: {
     effect: "none",
+    effectTint: "",
+    effectTintOpacity: 0.75,
     opacity: 1,
     backgroundImage: "",
     backgroundImageOpacity: 0.6,
@@ -275,6 +277,8 @@ const DEFAULT_CONFIG: AppConfig = {
     autoResizeHeight: true,
     opacity: 1,
     effect: "none",
+    effectTint: "",
+    effectTintOpacity: 0.75,
     backgroundImage: "",
     backgroundImageOpacity: 0.6,
     alwaysOnTop: true,
@@ -384,6 +388,9 @@ function mergeConfig(partial: Partial<AppConfig> | null | undefined): AppConfig 
     translateTimeoutMs: partial.translateTimeoutMs ?? DEFAULT_CONFIG.translateTimeoutMs,
     window: {
       effect: sanitizeEffect(partial.window?.effect),
+      effectTint: partial.window?.effectTint ?? DEFAULT_CONFIG.window.effectTint,
+      effectTintOpacity:
+        partial.window?.effectTintOpacity ?? DEFAULT_CONFIG.window.effectTintOpacity,
       opacity: partial.window?.opacity ?? DEFAULT_CONFIG.window.opacity,
       backgroundImage:
         partial.window?.backgroundImage ?? DEFAULT_CONFIG.window.backgroundImage,
@@ -410,6 +417,10 @@ function mergeConfig(partial: Partial<AppConfig> | null | undefined): AppConfig 
         partial.extraWindow?.hideLabels ?? DEFAULT_CONFIG.extraWindow.hideLabels,
       autoResizeHeight:
         partial.extraWindow?.autoResizeHeight ?? DEFAULT_CONFIG.extraWindow.autoResizeHeight,
+      effectTint:
+        partial.extraWindow?.effectTint ?? DEFAULT_CONFIG.extraWindow.effectTint,
+      effectTintOpacity:
+        partial.extraWindow?.effectTintOpacity ?? DEFAULT_CONFIG.extraWindow.effectTintOpacity,
       opacity: partial.extraWindow?.opacity ?? DEFAULT_CONFIG.extraWindow.opacity,
       effect: sanitizeEffect(partial.extraWindow?.effect),
       backgroundImage:
@@ -440,6 +451,8 @@ function mergeConfig(partial: Partial<AppConfig> | null | undefined): AppConfig 
 
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
+  const configRef = useRef(config);
+  configRef.current = config;
   const loadedRef = useRef(false);
   const lastEmittedRef = useRef("");
   const lastAppliedRef = useRef("");
@@ -539,10 +552,15 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     let unlisten: UnlistenFn | undefined;
     void listen<{ width: number }>("extra-window-size", (event) => {
       if (disposed) return;
-      setConfig((prev) => ({
-        ...prev,
-        extraWindow: { ...prev.extraWindow, width: event.payload.width },
-      }));
+      const next: AppConfig = {
+        ...configRef.current,
+        extraWindow: { ...configRef.current.extraWindow, width: event.payload.width },
+      };
+      configRef.current = next;
+      setConfig(next);
+      // 宽度是用户拖拽悬浮窗产生的、需要跨重启保留；立即持久化，
+      // 避免主窗口很快关闭时 300ms 防抖还没落盘导致宽度丢失。
+      void invoke("save_config", { config: next }).catch(() => {});
     }).then((fn) => {
       if (disposed) fn();
       else unlisten = fn;

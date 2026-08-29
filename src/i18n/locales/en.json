@@ -36,6 +36,9 @@
     "translation": "Translation",
     "translating": "Translating...",
     "copy": "Copy",
+    "copyOriginal": "Copy original",
+    "copyTranslation": "Copy translation",
+    "copyBoth": "Copy original & translation",
     "delete": "Delete",
     "translate": "Translate",
     "retry": "Retry",
@@ -43,7 +46,8 @@
     "fromCache": "cached",
     "clearOutput": "Clear current thread output",
     "googleSearch": "Google search selected text",
-    "openDevtools": "Open developer tools"
+    "openDevtools": "Open developer tools",
+    "jumpToBottom": "Jump to bottom"
   },
   "settings": {
     "title": "Settings",
@@ -97,6 +101,8 @@
     "effectAero": "Aero (Blur)",
     "effectAcrylic": "Acrylic",
     "effectMica": "Mica",
+    "effectTint": "Tint color",
+    "effectTintOpacity": "Tint opacity",
     "windowOpacity": "Background opacity",
     "backgroundImage": "Background image",
     "backgroundImageOpacity": "Background image opacity",

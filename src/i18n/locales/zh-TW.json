@@ -34,6 +34,9 @@
     "translation": "譯文",
     "translating": "翻譯中...",
     "copy": "複製",
+    "copyOriginal": "複製原文",
+    "copyTranslation": "複製譯文",
+    "copyBoth": "複製原文和譯文",
     "delete": "刪除",
     "translate": "翻譯",
     "retry": "重試",
@@ -41,7 +44,8 @@
     "fromCache": "快取",
     "clearOutput": "清除目前執行緒的輸出",
     "googleSearch": "用 Google 搜尋選取的文字",
-    "openDevtools": "開啟開發者工具"
+    "openDevtools": "開啟開發者工具",
+    "jumpToBottom": "跳到底部"
   },
   "settings": {
     "title": "設定",
@@ -95,6 +99,8 @@
     "effectAero": "Aero（模糊）",
     "effectAcrylic": "壓克力",
     "effectMica": "雲母",
+    "effectTint": "色調顏色",
+    "effectTintOpacity": "色調不透明度",
     "windowOpacity": "背景不透明度",
     "backgroundImage": "背景圖片",
     "backgroundImageOpacity": "背景圖片不透明度",

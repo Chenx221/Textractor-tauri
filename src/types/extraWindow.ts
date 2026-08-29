@@ -21,6 +21,10 @@ export interface ExtraWindowSettings {
   opacity: number;
   /** 原生背景效果（普通透明/Aero/亚克力/云母）。 */
   effect: BackdropEffect;
+  /** 原生效果 tint 颜色（#RRGGBB，空 = 自动跟随主题）。 */
+  effectTint: string;
+  /** 原生效果 tint 不透明度 0..1。 */
+  effectTintOpacity: number;
   /** 背景图路径（空 = 不使用）。 */
   backgroundImage: string;
   backgroundImageOpacity: number;
@@ -37,6 +41,10 @@ export interface ExtraWindowSettings {
 /** 主窗口外观设置（原生背景效果 + 背景图）。 */
 export interface WindowAppearance {
   effect: BackdropEffect;
+  /** 原生效果 tint 颜色（#RRGGBB，空 = 自动跟随主题）。 */
+  effectTint: string;
+  /** 原生效果 tint 不透明度 0..1。 */
+  effectTintOpacity: number;
   /** 主题背景不透明度 0..1（作用于 background.default/paper）。 */
   opacity: number;
   backgroundImage: string;

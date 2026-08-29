@@ -93,6 +93,17 @@ pub struct HookRemoved {
     pub address: u64,
 }
 
+#[derive(Clone, Serialize)]
+pub struct SavedThreadEvent {
+    pub handle: u64,
+    pub pid: u32,
+    pub addr: u64,
+    pub ctx: u64,
+    pub ctx2: u64,
+    pub code: Option<String>,
+    pub name: Option<String>,
+}
+
 // ---- 线程 / 进程状态 ----
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -131,6 +142,10 @@ static PROCESSES: std::sync::LazyLock<Mutex<HashMap<u32, ProcessRecord>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 static THREADS: std::sync::LazyLock<Mutex<HashMap<ThreadKey, TextThread>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+static SAVED_THREADS: std::sync::LazyLock<Mutex<HashMap<u32, saved::SavedThread>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+static ALREADY_ATTACHED: std::sync::LazyLock<Mutex<HashSet<u32>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashSet::new()));
 static PIPE_AVAILABLE: OnceLock<usize> = OnceLock::new();
 static CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
 static THREAD_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -581,17 +596,59 @@ fn handle_message(pid: u32, msg: &[u8], app: &AppHandle) {
                 ctx,
                 ctx2,
             };
-            let mut threads = THREADS.lock().unwrap();
-            let thread = threads.entry(key.clone()).or_insert_with(|| TextThread {
-                handle: THREAD_COUNTER.fetch_add(1, Ordering::SeqCst) + 1,
-                hp: get_hook(thread_pid, addr),
-                buffer: String::new(),
-                lead_byte: None,
-                repeating_chars: HashSet::new(),
-                force_flush: false,
-                last_push: Instant::now(),
-            });
-            push_thread(thread, &msg[32..]);
+            // 自动附加后若匹配保存的当前线程，则发出事件让前端切换视图
+            // （等价于原版 ThreadAdded 里的 savedMatch 逻辑）。
+            let saved_thread = SAVED_THREADS.lock().unwrap().get(&thread_pid).cloned();
+            let mut saved_match = false;
+            let mut saved_event: Option<SavedThreadEvent> = None;
+            {
+                let mut threads = THREADS.lock().unwrap();
+                let is_new = !threads.contains_key(&key);
+                let thread = threads.entry(key.clone()).or_insert_with(|| TextThread {
+                    handle: THREAD_COUNTER.fetch_add(1, Ordering::SeqCst) + 1,
+                    hp: get_hook(thread_pid, addr),
+                    buffer: String::new(),
+                    lead_byte: None,
+                    repeating_chars: HashSet::new(),
+                    force_flush: false,
+                    last_push: Instant::now(),
+                });
+                push_thread(thread, &msg[32..]);
+
+                if is_new {
+                    if let Some(st) = saved_thread {
+                        if let Some(hp) = &thread.hp {
+                            let code = hook_code(hp, thread_pid);
+                            if (st.ctx & 0xFFFF) == (ctx & 0xFFFF)
+                                && st.ctx2 == ctx2
+                                && st.code == code
+                            {
+                                saved_match = true;
+                                let name = if hp.name.is_empty() {
+                                    None
+                                } else {
+                                    Some(hp.name.clone())
+                                };
+                                saved_event = Some(SavedThreadEvent {
+                                    handle: thread.handle,
+                                    pid: thread_pid,
+                                    addr,
+                                    ctx,
+                                    ctx2,
+                                    code: Some(code),
+                                    name,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            if saved_match {
+                SAVED_THREADS.lock().unwrap().remove(&thread_pid);
+            }
+            if let Some(ev) = saved_event {
+                let _ = app.emit("host-saved-thread", ev);
+            }
         }
     }
 }
@@ -624,6 +681,7 @@ fn reader_loop(pid: u32, hook_pipe: usize, app: AppHandle) {
 
     // 清理该进程的线程与进程记录。
     THREADS.lock().unwrap().retain(|k, _| k.pid != pid);
+    SAVED_THREADS.lock().unwrap().remove(&pid);
     if let Some(rec) = PROCESSES.lock().unwrap().remove(&pid) {
         unsafe { CloseHandle(rec.host_pipe as HANDLE) };
         if let Some(view) = &rec.view {
@@ -700,18 +758,22 @@ fn accept_loop(app: AppHandle) {
                 view,
             },
         );
+        ALREADY_ATTACHED.lock().unwrap().insert(pid);
         let _ = app.emit("host-connected", pid);
 
-        // 记录进程并恢复已保存的 hook（gap 7）。
+        // 恢复已保存的 hook 与当前线程（等价于原版 ProcessConnected）。
+        // 注意：不在此处写 SavedGames.txt，手动附加不会触发后续自动附加。
         if let Some(dir) = CONFIG_DIR.get() {
             if let Some(exe) = saved::process_exe(pid) {
-                saved::record_game(dir, &exe);
                 let codes = saved::saved_hook_codes_for(dir, &exe);
                 for code in codes {
                     if let Some(hp) = hookcode::parse(&code) {
                         let cmd = proto::build_insert_hook_cmd(&hp, bitness);
                         send(pid, &cmd);
                     }
+                }
+                if let Some(st) = saved::saved_thread_for(dir, &exe) {
+                    SAVED_THREADS.lock().unwrap().insert(pid, st);
                 }
             }
         }
@@ -1000,25 +1062,47 @@ pub fn list_hooks(pid: u32) -> Vec<crate::HookInfo> {
     hooks
 }
 
-pub fn save_hooks(pid: u32, codes: Vec<String>) -> Result<(), String> {
+pub fn save_hooks(
+    pid: u32,
+    codes: Vec<String>,
+    current_thread: Option<(u64, u64, String)>,
+) -> Result<(), String> {
     let Some(dir) = CONFIG_DIR.get() else {
         return Err("Config dir not initialized.".to_string());
     };
     let Some(exe) = saved::process_exe(pid) else {
         return Err("Cannot resolve process path.".to_string());
     };
-    saved::save_hooks(dir, &exe, &codes);
+    let current_thread = current_thread.map(|(ctx, ctx2, code)| saved::SavedThread {
+        ctx,
+        ctx2,
+        code,
+    });
+    saved::save_hooks(dir, &exe, &codes, current_thread.as_ref());
     Ok(())
 }
 
+/// 定时扫描已保存进程并自动附加（等价于原版每 10 秒一次 `AttachSavedProcesses`，
+/// 启动后先立即扫一次）。
 pub fn auto_attach(app: &AppHandle) {
-    let Some(dir) = CONFIG_DIR.get() else {
+    static STARTED: AtomicBool = AtomicBool::new(false);
+    if STARTED.swap(true, Ordering::SeqCst) {
         return;
-    };
-    let pids = saved::auto_attach_targets(dir);
-    for pid in pids {
-        if !PROCESSES.lock().unwrap().contains_key(&pid) {
-            inject_process(pid, app.clone());
-        }
     }
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        if let Some(dir) = CONFIG_DIR.get() {
+            let pids = saved::auto_attach_targets(dir);
+            for pid in pids {
+                // 与原版 alreadyAttached 一致：本会话内已连接过（或仍连接）的 PID
+                // 不再重复注入，避免手动 detach 后被立刻自动重新附加。
+                let already = ALREADY_ATTACHED.lock().unwrap().contains(&pid)
+                    || PROCESSES.lock().unwrap().contains_key(&pid);
+                if !already {
+                    inject_process(pid, app.clone());
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_secs(10));
+    });
 }

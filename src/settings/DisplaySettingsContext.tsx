@@ -3,22 +3,46 @@ import { useConfig } from "./ConfigContext";
 import type { DisplaySettings, FontSettings } from "../types/display";
 
 export function fontToStyle(font: FontSettings): CSSProperties {
-  return {
+  const style: CSSProperties = {
     fontFamily: font.family || undefined,
     fontSize: font.size,
     fontWeight: font.bold ? 700 : 400,
     fontStyle: font.italic ? "italic" : "normal",
     textDecoration: font.underline ? "underline" : "none",
     color: font.color || undefined,
-    WebkitTextStroke:
-      font.strokeColor && font.strokeWidth > 0
-        ? `${font.strokeWidth}px ${font.strokeColor}`
-        : undefined,
-    textShadow:
-      font.glowColor && font.glowRadius > 0
-        ? `0 0 ${font.glowRadius}px ${font.glowColor}`
-        : undefined,
   };
+
+  const shadows: string[] = [];
+  const strokeColor = font.strokeColor;
+  const strokeWidth = font.strokeWidth;
+
+  if (strokeColor && strokeWidth > 0) {
+    if (strokeWidth <= 2) {
+      // 细描边用 -webkit-text-stroke，边缘更锐利。
+      style.WebkitTextStroke = `${strokeWidth}px ${strokeColor}`;
+    } else {
+      // 粗描边：-webkit-text-stroke 会向字形内部侵蚀，改用多方向 text-shadow
+      // 在字形外围描一圈粗边，文字主体保持完整可读。
+      const r = strokeWidth;
+      const dirs: [number, number][] = [
+        [0, -1], [1, -1], [1, 0], [1, 1],
+        [0, 1], [-1, 1], [-1, 0], [-1, -1],
+      ];
+      for (const [dx, dy] of dirs) {
+        shadows.push(`${(dx * r).toFixed(1)}px ${(dy * r).toFixed(1)}px 0 ${strokeColor}`);
+      }
+    }
+  }
+
+  if (font.glowColor && font.glowRadius > 0) {
+    shadows.push(`0 0 ${font.glowRadius}px ${font.glowColor}`);
+  }
+
+  if (shadows.length > 0) {
+    style.textShadow = shadows.join(", ");
+  }
+
+  return style;
 }
 
 interface DisplaySettingsContextValue {

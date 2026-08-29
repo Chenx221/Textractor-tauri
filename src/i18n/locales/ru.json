@@ -34,6 +34,9 @@
     "translation": "Перевод",
     "translating": "Перевод...",
     "copy": "Копировать",
+    "copyOriginal": "Копировать оригинал",
+    "copyTranslation": "Копировать перевод",
+    "copyBoth": "Копировать оригинал и перевод",
     "delete": "Удалить",
     "translate": "Перевести",
     "retry": "Повторить",
@@ -41,7 +44,8 @@
     "fromCache": "из кэша",
     "clearOutput": "Очистить вывод текущего потока",
     "googleSearch": "Искать выделенный текст в Google",
-    "openDevtools": "Открыть инструменты разработчика"
+    "openDevtools": "Открыть инструменты разработчика",
+    "jumpToBottom": "Перейти вниз"
   },
   "settings": {
     "title": "Настройки",
@@ -95,6 +99,8 @@
     "effectAero": "Aero (размытие)",
     "effectAcrylic": "Акрил",
     "effectMica": "Слюда",
+    "effectTint": "Цвет тонировки",
+    "effectTintOpacity": "Непрозрачность тонировки",
     "windowOpacity": "Непрозрачность фона",
     "backgroundImage": "Фоновое изображение",
     "backgroundImageOpacity": "Непрозрачность фонового изображения",

@@ -36,6 +36,9 @@
     "translation": "译文",
     "translating": "翻译中...",
     "copy": "复制",
+    "copyOriginal": "复制原文",
+    "copyTranslation": "复制译文",
+    "copyBoth": "复制原文和译文",
     "delete": "删除",
     "translate": "翻译",
     "retry": "重试",
@@ -43,7 +46,8 @@
     "fromCache": "缓存",
     "clearOutput": "清除当前线程输出",
     "googleSearch": "用 Google 搜索选中的文本",
-    "openDevtools": "打开开发者工具"
+    "openDevtools": "打开开发者工具",
+    "jumpToBottom": "跳到底部"
   },
   "settings": {
     "title": "设置",
@@ -97,6 +101,8 @@
     "effectAero": "Aero（模糊）",
     "effectAcrylic": "亚克力",
     "effectMica": "云母",
+    "effectTint": "色调颜色",
+    "effectTintOpacity": "色调不透明度",
     "windowOpacity": "背景不透明度",
     "backgroundImage": "背景图片",
     "backgroundImageOpacity": "背景图片不透明度",

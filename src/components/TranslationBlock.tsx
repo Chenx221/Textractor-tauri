@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { Box, Button, CircularProgress, IconButton, Paper, Tooltip, Typography } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import CopyAllIcon from "@mui/icons-material/CopyAll";
+import TranslateIcon from "@mui/icons-material/Translate";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import ReplayIcon from "@mui/icons-material/Replay";
 import { useTranslation } from "react-i18next";
@@ -11,8 +13,7 @@ interface TranslationBlockProps {
   block: TextBlock;
   showTranslation: boolean;
   onDelete: () => void;
-  onCopy: () => void;
-  onTranslate: () => void;
+  onTranslate: (provider: string) => void;
   onRetry: (provider: string) => void;
 }
 
@@ -21,7 +22,6 @@ export const TranslationBlock = memo(
     block,
     showTranslation,
     onDelete,
-    onCopy,
     onTranslate,
     onRetry,
   }: TranslationBlockProps) {
@@ -31,13 +31,37 @@ export const TranslationBlock = memo(
 
   const providerLabel = (provider: string) => t(`extensions.${provider}`);
 
+  const copyText = (text: string) => {
+    void navigator.clipboard.writeText(text).catch(() => {});
+  };
+
+  const doneTranslations = block.translations.filter((e) => e.state === "done" && e.text);
+  const translationText = doneTranslations.map((e) => e.text).join("\n");
+  const copyOriginal = () => copyText(block.original);
+  const copyTranslation = () => copyText(translationText);
+  const copyBoth = () => copyText(`${block.original}\n\n${translationText}`);
+
   return (
     <Paper variant="outlined" sx={{ p: 1.5, position: "relative" }}>
       <Box sx={{ position: "absolute", top: 4, right: 4, display: "flex" }}>
-        <Tooltip title={t("content.copy")}>
-          <IconButton size="small" onClick={onCopy}>
+        <Tooltip title={t("content.copyOriginal")}>
+          <IconButton size="small" onClick={copyOriginal}>
             <ContentCopyIcon fontSize="small" />
           </IconButton>
+        </Tooltip>
+        <Tooltip title={t("content.copyTranslation")}>
+          <span>
+            <IconButton size="small" onClick={copyTranslation} disabled={translationText === ""}>
+              <TranslateIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title={t("content.copyBoth")}>
+          <span>
+            <IconButton size="small" onClick={copyBoth} disabled={translationText === ""}>
+              <CopyAllIcon fontSize="small" />
+            </IconButton>
+          </span>
         </Tooltip>
         <Tooltip title={t("content.delete")}>
           <IconButton size="small" onClick={onDelete}>
@@ -85,7 +109,7 @@ export const TranslationBlock = memo(
             if (entry.state === "pending") {
               return (
                 <Box key={entry.provider} sx={{ mt: 0.25 }}>
-                  <Button size="small" onClick={onTranslate}>
+                  <Button size="small" onClick={() => onTranslate(entry.provider)}>
                     {t("content.translate")} · {providerLabel(entry.provider)}
                   </Button>
                 </Box>

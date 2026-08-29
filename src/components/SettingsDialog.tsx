@@ -50,6 +50,8 @@ const EFFECT_OPTIONS: { value: BackdropEffect; labelKey: string }[] = [
 
 interface AppearanceValue {
   effect: BackdropEffect;
+  effectTint: string;
+  effectTintOpacity: number;
   opacity: number;
   backgroundImage: string;
   backgroundImageOpacity: number;
@@ -148,6 +150,52 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           ))}
         </Select>
       </FormControl>
+
+      {value.effect !== "none" && (
+        <>
+          <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+            <FormLabel>{t("settings.effectTint")}</FormLabel>
+            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+              <input
+                type="color"
+                value={value.effectTint || "#202020"}
+                onChange={(e) => onChange({ effectTint: e.target.value })}
+                style={{
+                  width: 30,
+                  height: 30,
+                  padding: 0,
+                  border: "none",
+                  background: "none",
+                  cursor: "pointer",
+                }}
+              />
+              <TextField
+                size="small"
+                fullWidth
+                value={value.effectTint}
+                onChange={(e) => onChange({ effectTint: e.target.value })}
+                placeholder="#RRGGBB"
+                slotProps={{ htmlInput: { maxLength: 7 } }}
+              />
+              <Button size="small" onClick={() => onChange({ effectTint: "" })}>
+                {t("settings.clearImage")}
+              </Button>
+            </Box>
+          </FormControl>
+
+          <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+            <FormLabel>{t("settings.effectTintOpacity")}</FormLabel>
+            <Slider
+              value={value.effectTintOpacity}
+              min={0}
+              max={1}
+              step={0.05}
+              valueLabelDisplay="auto"
+              onChange={(_, v) => onChange({ effectTintOpacity: v as number })}
+            />
+          </FormControl>
+        </>
+      )}
 
       <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
         <FormLabel>{t("settings.windowOpacity")}</FormLabel>

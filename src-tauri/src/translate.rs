@@ -57,19 +57,34 @@ fn to_string(body: Vec<u8>) -> Result<String, String> {
     String::from_utf8(body).map_err(|e| e.to_string())
 }
 
-/// 基础 HTML 实体反转义（部分免费接口返回实体文本）。
+/// HTML 实体反转义（translate-pa / 免费接口返回实体文本）。
+/// 单次扫描、`&amp;` 最后匹配，避免 `&amp;quot;` 被二次解析（对齐 C++ HTML::Unescape）。
 fn html_unescape(s: &str) -> String {
-    let mut out = s.to_string();
-    for (entity, ch) in [
-        ("&quot;", '"'),
-        ("&apos;", '\''),
+    const ENTITIES: &[(&str, char)] = &[
         ("&lt;", '<'),
         ("&gt;", '>'),
-        ("&amp;", '&'),
+        ("&apos;", '\''),
         ("&#39;", '\''),
         ("&#x27;", '\''),
-    ] {
-        out = out.replace(entity, &ch.to_string());
+        ("&#X27;", '\''),
+        ("&quot;", '"'),
+        ("&amp;", '&'),
+    ];
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'&' {
+            if let Some((ent, ch)) = ENTITIES.iter().find(|(ent, _)| s[i..].starts_with(ent)) {
+                out.push(*ch);
+                i += ent.len();
+                continue;
+            }
+        }
+        // 普通字符按 char 边界推进（兼容多字节 UTF-8）。
+        let ch = s[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
     }
     out
 }
@@ -201,27 +216,29 @@ fn call_provider(request: &TranslateRequest) -> Result<String, String> {
 // ---- Google Translate（免费，无需密钥） ----
 
 fn google_translate(request: &TranslateRequest) -> Result<String, String> {
-    let url = format!(
-        "https://translate.googleapis.com/translate_a/single?client=gtx&sl={}&tl={}&dt=t&q={}",
-        request.source,
-        request.target,
-        percent_encode(&request.text)
-    );
-    let body = http_request("GET", &url, &[], &[], timeout_of(request))?;
+    // 2026-08: translate.googleapis.com 的 gtx 免费端点已被 Google 禁用（HTTP 429 返回 HTML），
+    // 对齐 C++ 参考实现（googletranslate.cpp）无 authKey 分支，改用 translate-pa 接口。
+    // 请求体新结构: [[[texts...], from, to], "te_lib"]（from/to 移到文本数组外层）。
+    let payload = serde_json::json!([[[request.text], request.source, request.target], "te_lib"]);
+    let url = "https://translate-pa.googleapis.com/v1/translateHtml";
+    let headers = vec![
+        "X-Goog-API-Key: AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520".to_string(),
+        "Content-Type: application/json+protobuf".to_string(),
+    ];
+    let body = http_request("POST", url, &headers, payload.to_string().as_bytes(), timeout_of(request))?;
     let text = to_string(body)?;
+    if text.is_empty() {
+        return Err("Google empty response.".to_string());
+    }
     let json: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    let mut out = String::new();
-    if let Some(segments) = json.get(0).and_then(|x| x.as_array()) {
-        for seg in segments {
-            if let Some(s) = seg.get(0).and_then(|x| x.as_str()) {
-                out.push_str(s);
-            }
-        }
-    }
-    if out.is_empty() {
-        return Err(format!("Google empty response: {text}"));
-    }
-    Ok(out)
+    // 新响应结构: [["译文1","译文2",...], ["en","en",...]]
+    // 译文中的 HTML 特殊字符会被转义成实体（如 &quot; &lt;），需反转义（对齐 C++ HTML::Unescape）。
+    json.get(0)
+        .and_then(|x| x.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|x| x.as_str())
+        .map(html_unescape)
+        .ok_or_else(|| format!("Google parse error: {text}"))
 }
 
 // ---- Google Translate2（google.com 免费端点） ----
@@ -731,19 +748,25 @@ fn deepseek_translate(request: &TranslateRequest) -> Result<String, String> {
 
     let mut payload = serde_json::json!({
         "model": model,
-        "temperature": temperature,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": ai_user_prompt(request)},
         ],
     });
     if enable_thinking {
+        payload["thinking"] = serde_json::json!({"type": "enabled"});
         let effort = if reasoning_effort.is_empty() {
             "high".to_string()
         } else {
             reasoning_effort
         };
         payload["reasoning_effort"] = serde_json::Value::String(effort);
+    } else {
+        // 关闭思考模式必须显式声明：deepseek-v4 系列默认开启思考（默认 effort=high），
+        // 省略 thinking 字段会先输出大量思维链导致响应极慢。
+        // 对齐 C++ ref/extensions/deepseektranslate.cpp 的 else 分支。
+        payload["thinking"] = serde_json::json!({"type": "disabled"});
+        payload["temperature"] = serde_json::json!(temperature);
     }
 
     let url = format!("https://{}{}", host.trim_end_matches('/'), path);

@@ -34,6 +34,9 @@
     "translation": "번역",
     "translating": "번역 중...",
     "copy": "복사",
+    "copyOriginal": "원문 복사",
+    "copyTranslation": "번역 복사",
+    "copyBoth": "원문과 번역 복사",
     "delete": "삭제",
     "translate": "번역",
     "retry": "재시도",
@@ -41,7 +44,8 @@
     "fromCache": "캐시됨",
     "clearOutput": "현재 스레드 출력 지우기",
     "googleSearch": "선택한 텍스트 Google 검색",
-    "openDevtools": "개발자 도구 열기"
+    "openDevtools": "개발자 도구 열기",
+    "jumpToBottom": "맨 아래로 이동"
   },
   "settings": {
     "title": "설정",
@@ -95,6 +99,8 @@
     "effectAero": "Aero (블러)",
     "effectAcrylic": "아크릴",
     "effectMica": "마이카",
+    "effectTint": "틴트 색상",
+    "effectTintOpacity": "틴트 불투명도",
     "windowOpacity": "배경 불투명도",
     "backgroundImage": "배경 이미지",
     "backgroundImageOpacity": "배경 이미지 불투명도",

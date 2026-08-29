@@ -34,6 +34,9 @@
     "translation": "Übersetzung",
     "translating": "Übersetze...",
     "copy": "Kopieren",
+    "copyOriginal": "Original kopieren",
+    "copyTranslation": "Übersetzung kopieren",
+    "copyBoth": "Original und Übersetzung kopieren",
     "delete": "Löschen",
     "translate": "Übersetzen",
     "retry": "Erneut versuchen",
@@ -41,7 +44,8 @@
     "fromCache": "zwischengespeichert",
     "clearOutput": "Ausgabe des aktuellen Threads löschen",
     "googleSearch": "Ausgewählten Text bei Google suchen",
-    "openDevtools": "Entwicklertools öffnen"
+    "openDevtools": "Entwicklertools öffnen",
+    "jumpToBottom": "Nach unten springen"
   },
   "settings": {
     "title": "Einstellungen",
@@ -95,6 +99,8 @@
     "effectAero": "Aero (Unschärfe)",
     "effectAcrylic": "Acryl",
     "effectMica": "Mica",
+    "effectTint": "Farbton",
+    "effectTintOpacity": "Farbton-Deckkraft",
     "windowOpacity": "Hintergrund-Deckkraft",
     "backgroundImage": "Hintergrundbild",
     "backgroundImageOpacity": "Deckkraft des Hintergrundbilds",

@@ -34,6 +34,9 @@
     "translation": "Terjemahan",
     "translating": "Menerjemahkan...",
     "copy": "Salin",
+    "copyOriginal": "Salin teks asli",
+    "copyTranslation": "Salin terjemahan",
+    "copyBoth": "Salin asli & terjemahan",
     "delete": "Hapus",
     "translate": "Terjemahkan",
     "retry": "Coba lagi",
@@ -41,7 +44,8 @@
     "fromCache": "cache",
     "clearOutput": "Bersihkan keluaran thread saat ini",
     "googleSearch": "Cari teks terpilih di Google",
-    "openDevtools": "Buka alat pengembang"
+    "openDevtools": "Buka alat pengembang",
+    "jumpToBottom": "Ke bawah"
   },
   "settings": {
     "title": "Pengaturan",
@@ -95,6 +99,8 @@
     "effectAero": "Aero (Blur)",
     "effectAcrylic": "Akrilik",
     "effectMica": "Mika",
+    "effectTint": "Warna tint",
+    "effectTintOpacity": "Opasitas tint",
     "windowOpacity": "Opasitas latar",
     "backgroundImage": "Gambar latar",
     "backgroundImageOpacity": "Opasitas gambar latar",

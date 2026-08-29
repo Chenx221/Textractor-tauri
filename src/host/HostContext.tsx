@@ -51,6 +51,16 @@ interface HookRemoved {
   address: number;
 }
 
+interface SavedThreadEvent {
+  handle: number;
+  pid: number;
+  addr: number;
+  ctx: number;
+  ctx2: number;
+  code: string | null;
+  name: string | null;
+}
+
 interface HookThread {
   id: string;
   handle: number;
@@ -77,8 +87,8 @@ interface HostContextValue {
   /** 当前查看的线程（"console" / "clipboard" / hook 线程 id）。 */
   selectedThread: string;
   setSelectedThread: (threadId: string) => void;
-  /** 手动翻译某个文本块（所有未请求的翻译服务）。 */
-  translateBlock: (id: string) => void;
+  /** 手动翻译某个文本块的指定翻译服务。 */
+  translateBlock: (id: string, provider: string) => void;
   /** 翻译失败后重试指定服务。 */
   retryBlock: (id: string, provider: string) => void;
   attach: (pid: number) => void;
@@ -132,6 +142,8 @@ export function HostProvider({ children }: { children: ReactNode }) {
   activeTranslatorsRef.current = activeTranslators;
   const selectedThreadRef = useRef(selectedThread);
   selectedThreadRef.current = selectedThread;
+  const hookThreadsRef = useRef(hookThreads);
+  hookThreadsRef.current = hookThreads;
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const romanizeRef = useRef(romanizeJa);
@@ -253,14 +265,14 @@ export function HostProvider({ children }: { children: ReactNode }) {
   );
 
   const translateBlock = useCallback(
-    (id: string) => {
+    (id: string, provider: string) => {
       const block = blocks.find((b) => b.id === id);
       if (!block) return;
-      for (const t of activeTranslatorsRef.current) {
-        const entry = block.translations.find((e) => e.provider === t.provider);
-        if (entry && entry.state === "pending") {
-          requestTranslationEntry(id, t.provider, block.original, t);
-        }
+      const t = activeTranslatorsRef.current.find((x) => x.provider === provider);
+      if (!t) return;
+      const entry = block.translations.find((e) => e.provider === provider);
+      if (entry && entry.state === "pending") {
+        requestTranslationEntry(id, provider, block.original, t);
       }
     },
     [blocks, requestTranslationEntry],
@@ -348,6 +360,21 @@ export function HostProvider({ children }: { children: ReactNode }) {
         setConsoleLines((prev) => [...prev, `Hook removed @ 0x${address.toString(16)}`]);
       }),
     );
+    unlisteners.push(
+      listen<SavedThreadEvent>("host-saved-thread", (event) => {
+        // 自动附加后恢复到保存时查看的文本线程（等价于原版 ThreadAdded 自动切换）。
+        const { handle, pid, addr, ctx, ctx2, code, name } = event.payload;
+        const threadId = `${pid}:${addr}:${ctx}:${ctx2}`;
+        setHookThreads((prev) =>
+          prev.some((t) => t.id === threadId)
+            ? prev.map((t) =>
+                t.id === threadId ? { ...t, handle, code: code ?? t.code, name: name ?? t.name } : t,
+              )
+            : [...prev, { id: threadId, handle, pid, addr, ctx, ctx2, code, name }],
+        );
+        setSelectedThread(threadId);
+      }),
+    );
 
     return () => {
       for (const unlisten of unlisteners) {
@@ -429,12 +456,23 @@ export function HostProvider({ children }: { children: ReactNode }) {
   const saveHooks = useCallback((pid: number) => {
     if (!isTauri()) return;
     void invoke<{ code: string; address: number; is_engine: boolean }[]>("list_hooks", { pid })
-      .then((hooks) =>
-        invoke("save_hooks", {
-          pid,
-          codes: hooks.filter((hook) => !hook.is_engine).map((hook) => hook.code),
-        }),
-      )
+      .then((hooks) => {
+        const codes = hooks.filter((hook) => !hook.is_engine).map((hook) => hook.code);
+        // 若当前查看的是该进程的有效文本线程（非控制台/剪贴板/ws），
+        // 一并保存其 ctx/ctx2/code，自动附加后会切换回该线程（等价于原版 SaveHooks）。
+        let currentThread: { ctx: number; ctx2: number; code: string } | null = null;
+        const sel = selectedThreadRef.current;
+        if (sel !== "console" && sel !== "clipboard" && sel !== "ws-client") {
+          const parts = sel.split(":");
+          if (parts.length === 4 && Number(parts[0]) === pid) {
+            const thread = hookThreadsRef.current.find((t) => t.id === sel);
+            if (thread?.code) {
+              currentThread = { ctx: thread.ctx, ctx2: thread.ctx2, code: thread.code };
+            }
+          }
+        }
+        return invoke("save_hooks", { pid, codes, currentThread });
+      })
       .catch(() => {});
   }, []);
 

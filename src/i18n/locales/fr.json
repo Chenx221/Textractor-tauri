@@ -34,6 +34,9 @@
     "translation": "Traduction",
     "translating": "Traduction...",
     "copy": "Copier",
+    "copyOriginal": "Copier l'original",
+    "copyTranslation": "Copier la traduction",
+    "copyBoth": "Copier l'original et la traduction",
     "delete": "Supprimer",
     "translate": "Traduire",
     "retry": "Réessayer",
@@ -41,7 +44,8 @@
     "fromCache": "en cache",
     "clearOutput": "Effacer la sortie du fil actuel",
     "googleSearch": "Rechercher le texte sélectionné sur Google",
-    "openDevtools": "Ouvrir les outils de développement"
+    "openDevtools": "Ouvrir les outils de développement",
+    "jumpToBottom": "Aller en bas"
   },
   "settings": {
     "title": "Paramètres",
@@ -95,6 +99,8 @@
     "effectAero": "Aero (Flou)",
     "effectAcrylic": "Acrylique",
     "effectMica": "Mica",
+    "effectTint": "Couleur de teinte",
+    "effectTintOpacity": "Opacité de la teinte",
     "windowOpacity": "Opacité de l'arrière-plan",
     "backgroundImage": "Image d'arrière-plan",
     "backgroundImageOpacity": "Opacité de l'image d'arrière-plan",

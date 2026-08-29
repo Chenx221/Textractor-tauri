@@ -39,15 +39,22 @@ fn guess_mime(path: &str) -> &'static str {
 }
 
 /// 为指定窗口应用原生背景效果（none/aero/acrylic/mica）。
-/// `dark` 表示当前应用主题为暗色，用于让原生效果跟随主题色。
-pub fn apply_effect(window: &WebviewWindow, effect: &str, dark: bool) -> Result<(), String> {
+/// `dark` 表示当前应用主题为暗色，用于让原生效果跟随主题色；
+/// `tint`（#RRGGBB）与 `tint_alpha`（0..1）允许用户自定义 Aero/亚克力的 tint。
+pub fn apply_effect(
+    window: &WebviewWindow,
+    effect: &str,
+    dark: bool,
+    tint: Option<&str>,
+    tint_alpha: Option<f32>,
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        apply_effect_windows(window, effect, dark)
+        apply_effect_windows(window, effect, dark, tint, tint_alpha)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (window, effect, dark);
+        let _ = (window, effect, dark, tint, tint_alpha);
         Ok(())
     }
 }
@@ -100,14 +107,16 @@ mod win {
         window: &tauri::WebviewWindow,
         effect: &str,
         dark: bool,
+        tint: Option<&str>,
+        tint_alpha: Option<f32>,
     ) -> Result<(), String> {
         let hwnd = hwnd_of(window)?;
         unsafe {
             clear_effects(hwnd);
 
             match effect {
-                "aero" => apply_aero(hwnd, dark),
-                "acrylic" => apply_acrylic(hwnd, dark),
+                "aero" => apply_aero(hwnd, dark, tint, tint_alpha),
+                "acrylic" => apply_acrylic(hwnd, dark, tint, tint_alpha),
                 "mica" => apply_mica(hwnd, dark),
                 _ => {}
             }
@@ -152,8 +161,8 @@ mod win {
     }
 
     /// Aero（旧式模糊）：SetWindowCompositionAttribute 的 ACCENT_ENABLE_BLURBEHIND。
-    unsafe fn apply_aero(hwnd: HWND, dark: bool) {
-        let tint = compose_tint(dark);
+    unsafe fn apply_aero(hwnd: HWND, dark: bool, tint: Option<&str>, tint_alpha: Option<f32>) {
+        let tint = compose_tint(dark, tint, tint_alpha);
         if set_window_composition_attribute().is_some() {
             set_accent(hwnd, ACCENT_ENABLE_BLURBEHIND, 0, tint);
         } else {
@@ -170,11 +179,11 @@ mod win {
 
     /// 亚克力：优先 WCA 的 ACCENT_ENABLE_ACRYLICBLURBEHIND（可自定义 tint），
     /// 新系统上回退到 DWM 的 DWMSBT_TRANSIENTWINDOW。
-    unsafe fn apply_acrylic(hwnd: HWND, dark: bool) {
+    unsafe fn apply_acrylic(hwnd: HWND, dark: bool, tint: Option<&str>, tint_alpha: Option<f32>) {
         set_dark_mode(hwnd, dark);
 
         if set_window_composition_attribute().is_some() {
-            let tint = compose_tint(dark);
+            let tint = compose_tint(dark, tint, tint_alpha);
             set_accent(hwnd, ACCENT_ENABLE_ACRYLICBLURBEHIND, 2, tint);
         } else {
             let sbt: i32 = DWMSBT_TRANSIENTWINDOW;
@@ -250,13 +259,38 @@ mod win {
     }
 
     /// 生成 ABGR（Windows 存储为 0xAABBGGRR）的 tint 颜色。
-    fn compose_tint(dark: bool) -> i32 {
-        let (r, g, b, a): (u8, u8, u8, u8) = if dark {
-            (32, 32, 32, 0xC0)
-        } else {
-            (255, 255, 255, 0xC0)
+    /// `tint` 为空时按主题使用默认的暗/亮 tint；`tint_alpha` 控制不透明度。
+    fn compose_tint(dark: bool, tint: Option<&str>, tint_alpha: Option<f32>) -> i32 {
+        let (r, g, b) = match tint.and_then(parse_hex_color) {
+            Some((r, g, b)) => (r, g, b),
+            None if dark => (32, 32, 32),
+            None => (255, 255, 255),
         };
+        let a = (tint_alpha.unwrap_or(0.75).clamp(0.0, 1.0) * 255.0).round() as u8;
         (((a as u32) << 24) | ((b as u32) << 16) | ((g as u32) << 8) | (r as u32)) as i32
+    }
+
+    /// 解析 #RGB / #RRGGBB 颜色。
+    fn parse_hex_color(input: &str) -> Option<(u8, u8, u8)> {
+        let s = input.trim().trim_start_matches('#');
+        let expand = |h: &str| -> Option<u8> {
+            u8::from_str_radix(h, 16).ok()
+        };
+        match s.len() {
+            3 => {
+                let r = expand(&s[0..1])?;
+                let g = expand(&s[1..2])?;
+                let b = expand(&s[2..3])?;
+                Some((r * 17, g * 17, b * 17))
+            }
+            6 => {
+                let r = expand(&s[0..2])?;
+                let g = expand(&s[2..4])?;
+                let b = expand(&s[4..6])?;
+                Some((r, g, b))
+            }
+            _ => None,
+        }
     }
 }
 

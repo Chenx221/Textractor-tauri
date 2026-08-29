@@ -134,6 +134,26 @@ export function FontSettingsEditor({ value, onChange, disabled }: FontSettingsEd
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32 }}>
+          {t("settings.color")}
+        </Typography>
+        <input
+          type="color"
+          value={value.color || "#000000"}
+          onChange={(e) => onChange({ color: e.target.value })}
+          style={{ width: 30, height: 30, padding: 0, border: "none", background: "none", cursor: "pointer" }}
+        />
+        <TextField
+          size="small"
+          fullWidth
+          value={value.color}
+          onChange={(e) => onChange({ color: e.target.value })}
+          placeholder="#RRGGBB"
+          slotProps={{ htmlInput: { maxLength: 7 } }}
+        />
+      </Box>
+
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32 }}>
           {t("settings.stroke")}
         </Typography>
         <input
@@ -147,7 +167,7 @@ export function FontSettingsEditor({ value, onChange, disabled }: FontSettingsEd
           size="small"
           value={value.strokeWidth}
           onChange={(e) => onChange({ strokeWidth: Math.max(0, Number(e.target.value) || 0) })}
-          slotProps={{ htmlInput: { min: 0, max: 10 } }}
+          slotProps={{ htmlInput: { min: 0, max: 20, step: 0.5 } }}
           sx={{ width: 70 }}
         />
         <Typography variant="caption" color="text.secondary">px</Typography>

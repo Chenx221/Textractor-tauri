@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Box, Divider, Menu, MenuItem, Paper, Select } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -6,7 +6,6 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { TextOutputArea } from "./TextOutputArea";
 import { useHost } from "../host/HostContext";
 import { useConfig } from "../settings/ConfigContext";
-import type { TextBlock } from "../types/translation";
 
 function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
@@ -54,12 +53,6 @@ export function ConsolePanel() {
     setContextMenu(null);
   };
 
-  const copyBlock = (block: TextBlock) => {
-    const done = block.translations.find((e) => e.state === "done" && e.text);
-    const text = done?.text ?? block.original;
-    void navigator.clipboard.writeText(text).catch(() => {});
-  };
-
   const handleContextMenu = (event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
     const selectedText = window.getSelection()?.toString().trim() ?? "";
@@ -95,6 +88,16 @@ export function ConsolePanel() {
   };
 
   const wsClientEnabled = config.websocket.clientEnabled;
+
+  // 预过滤当前线程的文本块，避免每次渲染都对全部块做 O(N) 的 filter。
+  const selectedBlocks = useMemo(
+    () => blocks.filter((b) => b.threadId === selectedThread),
+    [blocks, selectedThread],
+  );
+  const clipboardBlocks = useMemo(
+    () => blocks.filter((b) => b.threadId === "clipboard"),
+    [blocks],
+  );
 
   const threadOptions = [
     "console",
@@ -143,9 +146,8 @@ export function ConsolePanel() {
       {selectedThread !== "console" && selectedThread !== "clipboard" && (
         <TextOutputArea
           key={selectedThread}
-          blocks={blocks.filter((b) => b.threadId === selectedThread)}
+          blocks={selectedBlocks}
           onDelete={deleteBlock}
-          onCopy={copyBlock}
         />
       )}
 
@@ -171,9 +173,8 @@ export function ConsolePanel() {
 
       {selectedThread === "clipboard" && (
         <TextOutputArea
-          blocks={blocks.filter((b) => b.threadId === "clipboard")}
+          blocks={clipboardBlocks}
           onDelete={deleteBlock}
-          onCopy={copyBlock}
         />
       )}
 

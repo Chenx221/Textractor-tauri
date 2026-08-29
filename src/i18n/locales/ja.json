@@ -36,6 +36,9 @@
     "translation": "訳文",
     "translating": "翻訳中...",
     "copy": "コピー",
+    "copyOriginal": "原文をコピー",
+    "copyTranslation": "翻訳をコピー",
+    "copyBoth": "原文と翻訳をコピー",
     "delete": "削除",
     "translate": "翻訳",
     "retry": "再試行",
@@ -43,7 +46,8 @@
     "fromCache": "キャッシュ",
     "clearOutput": "現在のスレッド出力をクリア",
     "googleSearch": "選択したテキストをGoogleで検索",
-    "openDevtools": "開発者ツールを開く"
+    "openDevtools": "開発者ツールを開く",
+    "jumpToBottom": "最下部へ移動"
   },
   "settings": {
     "title": "設定",
@@ -97,6 +101,8 @@
     "effectAero": "Aero（ブラー）",
     "effectAcrylic": "アクリル",
     "effectMica": "マイカ",
+    "effectTint": "色合い",
+    "effectTintOpacity": "色合いの不透明度",
     "windowOpacity": "背景の不透明度",
     "backgroundImage": "背景画像",
     "backgroundImageOpacity": "背景画像の不透明度",

@@ -117,8 +117,10 @@ export default function App() {
       label: "main",
       effect: config.window.effect,
       dark: theme.palette.mode === "dark",
+      tint: config.window.effectTint || null,
+      tintAlpha: config.window.effectTintOpacity,
     }).catch(() => {});
-  }, [config.window.effect, theme.palette.mode]);
+  }, [config.window.effect, config.window.effectTint, config.window.effectTintOpacity, theme.palette.mode]);
 
   useEffect(() => {
     const onContextMenu = (event: MouseEvent) => {

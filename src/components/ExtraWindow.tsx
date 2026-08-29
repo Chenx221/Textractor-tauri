@@ -16,6 +16,32 @@ function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }
 
+function hexToRgb(hex: string): string {
+  const h = hex.replace("#", "");
+  const full =
+    h.length === 3
+      ? h
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : h;
+  const n = parseInt(full, 16);
+  if (Number.isNaN(n)) return "32, 32, 35";
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
+
+/** 读取悬浮窗当前逻辑宽度并上报给主窗口持久化（下次打开恢复）。 */
+async function reportExtraWindowWidth() {
+  try {
+    const win = getCurrentWindow();
+    const size = await win.innerSize();
+    const sf = await win.scaleFactor();
+    await emit("extra-window-size", { width: Math.round(size.width / sf) }).catch(() => {});
+  } catch {
+    // 忽略上报失败。
+  }
+}
+
 type ResizeDir =
   | "North"
   | "South"
@@ -67,8 +93,10 @@ export function ExtraWindowApp() {
       label: "extra",
       effect: settings.effect,
       dark: isDark,
+      tint: settings.effectTint || null,
+      tintAlpha: settings.effectTintOpacity,
     }).catch(() => {});
-  }, [settings.effect, isDark]);
+  }, [settings.effect, settings.effectTint, settings.effectTintOpacity, isDark]);
 
   // 置顶 / 点击穿透跟随设置。
   useEffect(() => {
@@ -126,22 +154,28 @@ export function ExtraWindowApp() {
   }, [settings.position]);
 
   // 恢复上次窗口宽度（逻辑像素），高度保持当前值（autoResizeHeight 会自适应高度）。
+  // 恢复可能发生在窗口尚未完全就绪时，失败则重试，避免一次性放弃后宽度变回默认值。
   useEffect(() => {
     if (!isTauri() || widthRestoredRef.current) return;
     const savedWidth = settings.width;
     if (!savedWidth) return;
-    widthRestoredRef.current = true;
     const win = getCurrentWindow();
-    void (async () => {
+    let attempts = 0;
+    const tryRestore = async () => {
       try {
         const size = await win.innerSize();
         const sf = await win.scaleFactor();
         const logical = size.toLogical(sf);
         await win.setSize(new LogicalSize(savedWidth, logical.height));
+        widthRestoredRef.current = true;
       } catch {
-        // 忽略恢复失败。
+        attempts += 1;
+        if (attempts < 10) {
+          window.setTimeout(tryRestore, 200);
+        }
       }
-    })();
+    };
+    void tryRestore();
   }, [settings.width]);
 
   // 悬浮窗被拖动后，把位置上报给主窗口写入配置（下次打开恢复）。
@@ -178,21 +212,12 @@ export function ExtraWindowApp() {
     let disposed = false;
     let unlisten: UnlistenFn | undefined;
     let timer: number | undefined;
-    let lastWidth = 0;
     void win
-      .onResized(({ payload }) => {
+      .onResized(() => {
         if (disposed) return;
         if (timer !== undefined) window.clearTimeout(timer);
-        timer = window.setTimeout(async () => {
-          try {
-            const sf = await win.scaleFactor();
-            const logicalWidth = Math.round(payload.width / sf);
-            if (logicalWidth === lastWidth) return;
-            lastWidth = logicalWidth;
-            await emit("extra-window-size", { width: logicalWidth }).catch(() => {});
-          } catch {
-            // 忽略。
-          }
+        timer = window.setTimeout(() => {
+          void reportExtraWindowWidth();
         }, 250);
       })
       .then((fn) => {
@@ -247,15 +272,22 @@ export function ExtraWindowApp() {
 
   const startResize = (dir: ResizeDir) => {
     if (!isTauri()) return;
-    void getCurrentWindow().startResizeDragging(dir).catch(() => {});
+    // 拖拽结束（Promise resolve）时立即上报一次宽度，避免用户松手后很快退出
+    // 应用，250ms 防抖还没触发导致宽度丢失。
+    void getCurrentWindow()
+      .startResizeDragging(dir)
+      .then(() => reportExtraWindowWidth())
+      .catch(() => {});
   };
 
   const translationFont = settings.sameForBoth ? settings.source : settings.translation;
-  const tint = isDark ? "32, 32, 35" : "250, 250, 252";
+  const defaultTint = isDark ? "#202023" : "#fafafc";
+  const tintRgb = hexToRgb(settings.effectTint || defaultTint);
   // 原生效果（Aero/亚克力/云母）自带背景与 tint，Web 层只保留很淡的遮罩，
-  // 避免高不透明度 + 夜间模式下叠加出与 Windows 原生不一致的颜色。
-  const tintAlpha = settings.effect === "none" ? settings.opacity : settings.opacity * 0.12;
-  const panelBg = `rgba(${tint}, ${tintAlpha})`;
+  // 避免高不透明度 + 夜间模式下叠加出与 Windows 原生不一致的颜色；
+  // 遮罩颜色/强度由“tint 颜色 / tint 不透明度”控制。
+  const tintAlpha = settings.effect === "none" ? settings.opacity : settings.effectTintOpacity * 0.2;
+  const panelBg = `rgba(${tintRgb}, ${tintAlpha})`;
 
   const doneTranslations =
     payload?.translations.filter((e) => e.state === "done" && e.text) ?? [];

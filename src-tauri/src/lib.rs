@@ -71,6 +71,15 @@ pub struct ThreadSettings {
     pub limit_string_length: usize,
 }
 
+/// 保存 hook 时附带的当前查看线程（非控制台/剪贴板），用于自动附加后切换回该线程。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedThreadInput {
+    pub ctx: u64,
+    pub ctx2: u64,
+    pub code: String,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchParamInput {
@@ -197,11 +206,13 @@ fn set_window_effect(
     label: String,
     effect: String,
     dark: bool,
+    tint: Option<String>,
+    tint_alpha: Option<f32>,
 ) -> Result<(), String> {
     let window = app
         .get_webview_window(&label)
         .ok_or_else(|| format!("Window {label} not found."))?;
-    windowfx::apply_effect(&window, &effect, dark)
+    windowfx::apply_effect(&window, &effect, dark, tint.as_deref(), tint_alpha)
 }
 
 /// 把本地图片读取为 data URI（用于 CSS 背景图）。
@@ -314,15 +325,20 @@ fn list_hooks(pid: u32) -> Vec<HookInfo> {
     }
 }
 
-#[tauri::command]
-fn save_hooks(pid: u32, codes: Vec<String>) -> Result<(), String> {
+#[tauri::command(rename_all = "camelCase")]
+fn save_hooks(
+    pid: u32,
+    codes: Vec<String>,
+    current_thread: Option<SavedThreadInput>,
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        host::save_hooks(pid, codes)
+        let current = current_thread.map(|t| (t.ctx, t.ctx2, t.code));
+        host::save_hooks(pid, codes, current)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (pid, codes);
+        let _ = (pid, codes, current_thread);
         Ok(())
     }
 }

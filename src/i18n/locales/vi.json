@@ -34,6 +34,9 @@
     "translation": "Bản dịch",
     "translating": "Đang dịch...",
     "copy": "Sao chép",
+    "copyOriginal": "Sao chép bản gốc",
+    "copyTranslation": "Sao chép bản dịch",
+    "copyBoth": "Sao chép bản gốc & bản dịch",
     "delete": "Xóa",
     "translate": "Dịch",
     "retry": "Thử lại",
@@ -41,7 +44,8 @@
     "fromCache": "từ cache",
     "clearOutput": "Xóa đầu ra của luồng hiện tại",
     "googleSearch": "Tìm văn bản đã chọn trên Google",
-    "openDevtools": "Mở công cụ phát triển"
+    "openDevtools": "Mở công cụ phát triển",
+    "jumpToBottom": "Cuộn xuống cuối"
   },
   "settings": {
     "title": "Cài đặt",
@@ -95,6 +99,8 @@
     "effectAero": "Aero (Làm mờ)",
     "effectAcrylic": "Acrylic",
     "effectMica": "Mica",
+    "effectTint": "Màu pha",
+    "effectTintOpacity": "Độ mờ màu pha",
     "windowOpacity": "Độ mờ nền",
     "backgroundImage": "Ảnh nền",
     "backgroundImageOpacity": "Độ mờ ảnh nền",
