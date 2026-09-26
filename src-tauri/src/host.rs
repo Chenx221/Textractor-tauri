@@ -1084,25 +1084,51 @@ pub fn save_hooks(
 
 /// 定时扫描已保存进程并自动附加（等价于原版每 10 秒一次 `AttachSavedProcesses`，
 /// 启动后先立即扫一次）。
+///
+/// 比原版多两道保护，避免自动化叠加导致的问题：
+/// 1. 已经附加到游戏（仍有进程连着）时不再扫描/自动附加；
+/// 2. 同名进程多开时跳过该进程（自动注入会同时附加到多个进程），交给用户手动附加。
 pub fn auto_attach(app: &AppHandle) {
     static STARTED: AtomicBool = AtomicBool::new(false);
     if STARTED.swap(true, Ordering::SeqCst) {
         return;
     }
     let app = app.clone();
-    std::thread::spawn(move || loop {
-        if let Some(dir) = CONFIG_DIR.get() {
-            let pids = saved::auto_attach_targets(dir);
-            for pid in pids {
-                // 与原版 alreadyAttached 一致：本会话内已连接过（或仍连接）的 PID
-                // 不再重复注入，避免手动 detach 后被立刻自动重新附加。
-                let already = ALREADY_ATTACHED.lock().unwrap().contains(&pid)
-                    || PROCESSES.lock().unwrap().contains_key(&pid);
-                if !already {
-                    inject_process(pid, app.clone());
+    std::thread::spawn(move || {
+        // 每个 exe 只提示一次原因，避免每 10 秒刷屏。
+        let mut warned: HashSet<String> = HashSet::new();
+        loop {
+            // 已附加到游戏时不再自动扫描/附加。
+            let attached = !PROCESSES.lock().unwrap().is_empty();
+            if !attached {
+                if let Some(dir) = CONFIG_DIR.get() {
+                    for (exe, pids) in saved::auto_attach_targets(dir) {
+                        // 同名进程多开（同一 exe 正在跑多个实例）：无法确定该附加哪一个，
+                        // 自动注入会同时附加到多个进程，故跳过并提示用户手动附加。
+                        if pids.len() > 1 {
+                            if warned.insert(exe.clone()) {
+                                emit_console(
+                                    &app,
+                                    format!(
+                                        "{} processes found for {}, auto attach skipped. Attach manually.",
+                                        pids.len(),
+                                        exe
+                                    ),
+                                );
+                            }
+                            continue;
+                        }
+                        // 本会话内已连接过（或仍连接）的 PID 不再重复注入，
+                        // 避免手动 detach 后被立刻自动重新附加。
+                        let pid = pids[0];
+                        if ALREADY_ATTACHED.lock().unwrap().contains(&pid) {
+                            continue;
+                        }
+                        inject_process(pid, app.clone());
+                    }
                 }
             }
+            std::thread::sleep(Duration::from_secs(10));
         }
-        std::thread::sleep(Duration::from_secs(10));
     });
 }

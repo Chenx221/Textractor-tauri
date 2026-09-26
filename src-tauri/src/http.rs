@@ -53,20 +53,53 @@ fn split_url(url: &str) -> Option<(String, String)> {
     }
 }
 
-/// 进程级复用的 WinHTTP 会话句柄：避免每次翻译请求都重新建立 TLS 会话/连接。
-fn shared_session() -> usize {
-    use std::sync::OnceLock;
-    static SESSION: OnceLock<usize> = OnceLock::new();
-    *SESSION.get_or_init(|| unsafe {
-        let agent = to_wide("Textractor/1.0");
+/// 默认 User-Agent（请求头未显式指定 `User-Agent` 时使用）。
+pub const DEFAULT_USER_AGENT: &str = "Textractor/1.0";
+
+/// 进程级复用的 WinHTTP 会话句柄（按 User-Agent 缓存）：避免每次翻译请求都重新
+/// 建立 TLS 会话/连接。
+///
+/// User-Agent 只能在 `WinHttpOpen` 里设定 —— 通过 `WinHttpSendRequest` 传
+/// `User-Agent` 头不可靠，故按 UA 分别缓存会话（不同 Provider 可用不同 UA，
+/// 例如 bing2 免费接口需要 Edge 的 UA）。
+fn session_for(agent: &str) -> usize {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static SESSIONS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+    let mut sessions = SESSIONS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap();
+    if let Some(handle) = sessions.get(agent) {
+        return *handle;
+    }
+    let wide = to_wide(agent);
+    let handle = unsafe {
         WinHttpOpen(
-            agent.as_ptr(),
+            wide.as_ptr(),
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
             std::ptr::null(),
             std::ptr::null(),
             0,
         ) as usize
-    })
+    };
+    sessions.insert(agent.to_string(), handle);
+    handle
+}
+
+/// 取出请求头里的 `User-Agent`，返回 (agent, 其余请求头)。
+fn split_user_agent(headers: &[String]) -> (String, Vec<String>) {
+    let mut agent = DEFAULT_USER_AGENT.to_string();
+    let mut rest = Vec::with_capacity(headers.len());
+    for header in headers {
+        match header.split_once(':') {
+            Some((name, value)) if name.trim().eq_ignore_ascii_case("user-agent") => {
+                agent = value.trim().to_string();
+            }
+            _ => rest.push(header.clone()),
+        }
+    }
+    (agent, rest)
 }
 
 /// 发送 HTTP 请求并返回响应体。`headers` 每项形如 `"Name: Value"`。
@@ -84,7 +117,8 @@ pub fn http_request(
         let path_w = to_wide(&path);
         let method_w = to_wide(method);
 
-        let session = shared_session() as *mut c_void;
+        let (agent, headers) = split_user_agent(headers);
+        let session = session_for(&agent) as *mut c_void;
         if session.is_null() {
             return Err("WinHttpOpen failed.".to_string());
         }

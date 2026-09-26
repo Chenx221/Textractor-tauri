@@ -541,12 +541,13 @@ fn aliyun_signed(request: &TranslateRequest, version: &str) -> Result<String, St
 
 // ---- Bing（apiKey 可选：Azure 或免费 token） ----
 
-fn bing_azure(
-    request: &TranslateRequest,
-    api_key: &str,
-    bearer: Option<&str>,
-) -> Result<String, String> {
-    let from = if request.source.is_empty() || request.source == "auto-detect" {
+/// 源语言是否为「自动检测」（前端值为 `auto-detect`，C++ 侧为 `?`）。
+fn is_auto_source(source: &str) -> bool {
+    source.is_empty() || source == "auto-detect" || source == "?"
+}
+
+fn bing_azure(request: &TranslateRequest, api_key: &str) -> Result<String, String> {
+    let from = if is_auto_source(&request.source) {
         String::new()
     } else {
         format!("&from={}", request.source)
@@ -556,12 +557,10 @@ fn bing_azure(
         request.target
     );
     let body = serde_json::json!([{"text": request.text}]).to_string();
-    let mut headers = vec!["Content-Type: application/json; charset=UTF-8".to_string()];
-    if let Some(token) = bearer {
-        headers.push(format!("Authorization: Bearer {token}"));
-    } else {
-        headers.push(format!("Ocp-Apim-Subscription-Key: {api_key}"));
-    }
+    let headers = vec![
+        "Content-Type: application/json; charset=UTF-8".to_string(),
+        format!("Ocp-Apim-Subscription-Key: {api_key}"),
+    ];
     let resp = http_request("POST", &url, &headers, body.as_bytes(), timeout_of(request))?;
     let text = to_string(resp)?;
     let json: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
@@ -603,7 +602,7 @@ fn bing_free_token() -> Result<String, String> {
 fn bing_translate(request: &TranslateRequest) -> Result<String, String> {
     let api_key = get_str(&request.settings, "apiKey");
     if !api_key.is_empty() {
-        return bing_azure(request, &api_key, None);
+        return bing_azure(request, &api_key);
     }
     let token = bing_free_token()?;
     let url = format!(
@@ -619,19 +618,42 @@ fn bing_translate(request: &TranslateRequest) -> Result<String, String> {
     json_str(&json, &["0", "translations", "0", "text"]).ok_or_else(|| json_err(&text))
 }
 
-// ---- Bing2（edge 免费 Bearer token） ----
+// ---- Bing2（edge.microsoft.com 免费接口） ----
 
+/// Bing2 免费接口使用的 Edge UA（与 C++ bingtranslate2.cpp 一致；该端点要求像浏览器请求）。
+const EDGE_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0 Textractor";
+
+/// 免费接口改为直接 POST `edge.microsoft.com/translate/translatetext`：
+/// 旧的「先 GET `/translate/auth` 取 Bearer token 再打 Azure 端点」流程已失效
+/// （该 auth 端点现在返回 404），现在 from/to/isEnterpriseClient 直接放 URL，
+/// body 为 `["文本"]`，响应取 `[0].translations[0].text`
+/// （与 C++ bingtranslate2.cpp 无 authKey 分支一致）。
 fn bing_translate2(request: &TranslateRequest) -> Result<String, String> {
     let api_key = get_str(&request.settings, "apiKey");
     if !api_key.is_empty() {
-        return bing_azure(request, &api_key, None);
+        return bing_azure(request, &api_key);
     }
-    let resp = http_request("GET", "https://edge.microsoft.com/translate/auth", &[], &[], 10_000)?;
-    let token = to_string(resp)?;
-    if token.is_empty() {
-        return Err("Bing2 token response empty.".to_string());
-    }
-    bing_azure(request, "", Some(token.trim()))
+    // 自动检测语言时 from 留空（edge 端点会返回 detectedLanguage）。
+    let from = if is_auto_source(&request.source) {
+        String::new()
+    } else {
+        request.source.clone()
+    };
+    let url = format!(
+        "https://edge.microsoft.com/translate/translatetext?from={}&to={}&isEnterpriseClient=false",
+        percent_encode(&from),
+        percent_encode(&request.target)
+    );
+    let body = serde_json::json!([request.text]).to_string();
+    let headers = vec![
+        "Content-Type: application/json".to_string(),
+        format!("User-Agent: {EDGE_USER_AGENT}"),
+    ];
+    let resp = http_request("POST", &url, &headers, body.as_bytes(), timeout_of(request))?;
+    let text = to_string(resp)?;
+    let json: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    json_str(&json, &["0", "translations", "0", "text"]).ok_or_else(|| json_err(&text))
 }
 
 // ---- Claude（Anthropic Messages API） ----
@@ -740,7 +762,7 @@ fn deepseek_translate(request: &TranslateRequest) -> Result<String, String> {
     let path = get_str(&request.settings, "apiPath");
     let path = if path.is_empty() { "/chat/completions".to_string() } else { path };
     let model = get_str(&request.settings, "model");
-    let model = if model.is_empty() { "deepseek-v4-flash".to_string() } else { model };
+    let model = if model.is_empty() { "deepseek-flash".to_string() } else { model };
     let system = ai_system_prompt(request);
     let temperature = ai_temperature(request);
     let reasoning_effort = get_str(&request.settings, "reasoningEffort");
@@ -1008,4 +1030,39 @@ fn tencent_transmart_translate(request: &TranslateRequest) -> Result<String, Str
     json_str(&json, &["auto_translation", "0"])
         .map(|s| html_unescape(&s))
         .ok_or_else(|| json_err(&text))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bing2_request(source: &str, target: &str, text: &str) -> TranslateRequest {
+        TranslateRequest {
+            provider: "bing2".to_string(),
+            source: source.to_string(),
+            target: target.to_string(),
+            text: text.to_string(),
+            settings: Value::Null,
+            timeout_ms: Some(20_000),
+            context: Vec::new(),
+        }
+    }
+
+    /// 联网测试（默认忽略）：`cargo test --lib bing2 -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bing2_free_endpoint() {
+        let out = bing_translate2(&bing2_request("ja", "zh-Hans", "こんにちは、世界。")).unwrap();
+        println!("bing2 ja -> zh-Hans: {out}");
+        assert!(!out.trim().is_empty());
+    }
+
+    /// 自动检测源语言（`from=` 留空，由端点返回 detectedLanguage）。
+    #[test]
+    #[ignore]
+    fn bing2_free_endpoint_auto_source() {
+        let out = bing_translate2(&bing2_request("auto-detect", "zh-Hans", "Good morning")).unwrap();
+        println!("bing2 auto -> zh-Hans: {out}");
+        assert!(!out.trim().is_empty());
+    }
 }

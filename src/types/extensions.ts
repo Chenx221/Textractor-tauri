@@ -622,7 +622,7 @@ export const TRANSLATOR_DEFS: TranslatorDef[] = [
       { key: "apiKey", labelKey: "extensions.apiKey", type: "password" },
       { key: "apiHost", labelKey: "extensions.apiHost", placeholder: "api.deepseek.com" },
       { key: "apiPath", labelKey: "extensions.apiPath", placeholder: "/chat/completions" },
-      { key: "model", labelKey: "extensions.model", placeholder: "deepseek-v4-flash" },
+      { key: "model", labelKey: "extensions.model", placeholder: "deepseek-flash" },
       { key: "systemPrompt", labelKey: "extensions.systemPrompt", type: "text" },
       { key: "temperature", labelKey: "extensions.temperature", type: "number" },
       { key: "enableThinking", labelKey: "extensions.enableThinking", type: "checkbox" },

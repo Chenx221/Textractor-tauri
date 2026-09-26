@@ -130,9 +130,13 @@ pub fn forget(dir: &Path, exe_path: &str) {
     }
 }
 
-/// 自动 attach：返回需要注入的进程 PID（只匹配 SavedHooks.txt 里保存过 hook 的
-/// 进程路径——与原版 `Auto attach (saved only)` 一致）。
-pub fn auto_attach_targets(dir: &Path) -> Vec<u32> {
+/// 自动 attach 的目标：返回 SavedHooks.txt 里保存过 hook、且当前正在运行的进程，
+/// 按 exe 路径分组为 `(exe, PIDs)`（只匹配保存过 hook 的进程路径 —— 与原版
+/// `Auto attach (saved only)` 一致）。
+///
+/// 之所以返回分组而不是平铺 PID：调用方需要区分「同名进程多开」—— 此时无法确定
+/// 该附加哪一个（自动注入会同时附加到多个进程），应跳过并交给用户手动附加。
+pub fn auto_attach_targets(dir: &Path) -> Vec<(String, Vec<u32>)> {
     use sysinfo::System;
 
     let mut targets = std::collections::HashSet::new();
@@ -150,14 +154,14 @@ pub fn auto_attach_targets(dir: &Path) -> Vec<u32> {
     let mut sys = System::new_all();
     sys.refresh_all();
 
-    let mut pids = Vec::new();
+    let mut by_exe: std::collections::BTreeMap<String, Vec<u32>> = std::collections::BTreeMap::new();
     for (pid, process) in sys.processes() {
         if let Some(exe) = process.exe() {
             let exe = exe.to_string_lossy().to_string();
             if targets.contains(&exe) {
-                pids.push(pid.as_u32());
+                by_exe.entry(exe).or_default().push(pid.as_u32());
             }
         }
     }
-    pids
+    by_exe.into_iter().collect()
 }
