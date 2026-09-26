@@ -40,6 +40,7 @@
     "delete": "삭제",
     "translate": "번역",
     "retry": "재시도",
+    "retranslate": "다시 번역",
     "translationError": "번역 오류",
     "fromCache": "캐시됨",
     "clearOutput": "현재 스레드 출력 지우기",

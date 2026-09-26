@@ -40,6 +40,7 @@
     "delete": "刪除",
     "translate": "翻譯",
     "retry": "重試",
+    "retranslate": "重新翻譯",
     "translationError": "翻譯錯誤",
     "fromCache": "快取",
     "clearOutput": "清除目前執行緒的輸出",

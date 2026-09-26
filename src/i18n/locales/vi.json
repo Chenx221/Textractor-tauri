@@ -40,6 +40,7 @@
     "delete": "Xóa",
     "translate": "Dịch",
     "retry": "Thử lại",
+    "retranslate": "Dịch lại",
     "translationError": "Lỗi dịch",
     "fromCache": "từ cache",
     "clearOutput": "Xóa đầu ra của luồng hiện tại",

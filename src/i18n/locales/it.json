@@ -40,6 +40,7 @@
     "delete": "Elimina",
     "translate": "Traduci",
     "retry": "Riprova",
+    "retranslate": "Ritraduci",
     "translationError": "Errore di traduzione",
     "fromCache": "in cache",
     "clearOutput": "Cancella l'uscita del thread corrente",

@@ -15,6 +15,8 @@ interface TranslationBlockProps {
   onDelete: () => void;
   onTranslate: (provider: string) => void;
   onRetry: (provider: string) => void;
+  /** 对已完成的译文重新翻译（绕过缓存）。 */
+  onRetranslate: (provider: string) => void;
 }
 
 export const TranslationBlock = memo(
@@ -24,6 +26,7 @@ export const TranslationBlock = memo(
     onDelete,
     onTranslate,
     onRetry,
+    onRetranslate,
   }: TranslationBlockProps) {
     const { t } = useTranslation();
   const { display } = useDisplaySettings();
@@ -151,12 +154,22 @@ export const TranslationBlock = memo(
             // done
             return (
               <Box key={entry.provider} sx={{ mt: 0.5 }}>
-                {!display.hideProviderLabel && (
-                  <Typography variant="caption" color="text.secondary" sx={{ userSelect: "none" }}>
-                    {providerLabel(entry.provider)}
-                    {entry.fromCache ? ` · ${t("content.fromCache")}` : ""}
-                  </Typography>
-                )}
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  {!display.hideProviderLabel && (
+                    <Typography variant="caption" color="text.secondary" sx={{ userSelect: "none" }}>
+                      {providerLabel(entry.provider)}
+                      {entry.fromCache ? ` · ${t("content.fromCache")}` : ""}
+                    </Typography>
+                  )}
+                  <Button
+                    size="small"
+                    startIcon={<ReplayIcon fontSize="small" />}
+                    sx={{ ml: "auto" }}
+                    onClick={() => onRetranslate(entry.provider)}
+                  >
+                    {t("content.retranslate")}
+                  </Button>
+                </Box>
                 <Typography
                   variant="body2"
                   sx={{ whiteSpace: "pre-wrap", mt: 0.1, pr: 7, ...fontToStyle(translationFont) }}

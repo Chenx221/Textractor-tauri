@@ -91,6 +91,8 @@ interface HostContextValue {
   translateBlock: (id: string, provider: string) => void;
   /** 翻译失败后重试指定服务。 */
   retryBlock: (id: string, provider: string) => void;
+  /** 对已完成的译文重新翻译（绕过缓存）。 */
+  retranslateBlock: (id: string, provider: string) => void;
   attach: (pid: number) => void;
   detach: (pid: number) => void;
   insertHook: (pid: number, code: string) => void;
@@ -150,7 +152,13 @@ export function HostProvider({ children }: { children: ReactNode }) {
   romanizeRef.current = romanizeJa;
 
   const requestTranslationEntry = useCallback(
-    (blockId: string, provider: string, text: string, translator: TranslationExtension) => {
+    (
+      blockId: string,
+      provider: string,
+      text: string,
+      translator: TranslationExtension,
+      skipCache = false,
+    ) => {
       setBlocks((prev) =>
         prev.map((b) =>
           b.id === blockId
@@ -179,7 +187,7 @@ export function HostProvider({ children }: { children: ReactNode }) {
         }
       }
       translateRef
-        .current(text, translator, context)
+        .current(text, translator, context, skipCache)
         .then((outcome) => {
           setBlocks((prev) =>
             prev.map((b) =>
@@ -286,6 +294,17 @@ export function HostProvider({ children }: { children: ReactNode }) {
       if (t) requestTranslationEntry(id, provider, block.original, t);
     },
     [blocks, requestTranslationEntry],
+  );
+
+  // “重新翻译”：对已完成的译文重新请求翻译服务，绕过缓存读取。
+  const retranslateBlock = useCallback(
+    (id: string, provider: string) => {
+      const block = blocksRef.current.find((b) => b.id === id);
+      if (!block) return;
+      const t = activeTranslatorsRef.current.find((x) => x.provider === provider);
+      if (t) requestTranslationEntry(id, provider, block.original, t, true);
+    },
+    [requestTranslationEntry],
   );
 
   useEffect(() => {
@@ -499,6 +518,7 @@ export function HostProvider({ children }: { children: ReactNode }) {
       setSelectedThread,
       translateBlock,
       retryBlock,
+      retranslateBlock,
       attach,
       detach,
       insertHook,
@@ -519,6 +539,7 @@ export function HostProvider({ children }: { children: ReactNode }) {
       selectedThread,
       translateBlock,
       retryBlock,
+      retranslateBlock,
       attach,
       detach,
       insertHook,

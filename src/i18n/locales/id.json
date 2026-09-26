@@ -40,6 +40,7 @@
     "delete": "Hapus",
     "translate": "Terjemahkan",
     "retry": "Coba lagi",
+    "retranslate": "Terjemahkan ulang",
     "translationError": "Kesalahan terjemahan",
     "fromCache": "cache",
     "clearOutput": "Bersihkan keluaran thread saat ini",

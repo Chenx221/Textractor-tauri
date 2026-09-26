@@ -35,11 +35,12 @@ interface ExtensionsContextValue {
   runSideEffectTools: (text: string, threadId?: string) => void;
   /** 调用后端 translate_text 翻译文本（含缓存）。 */
   translate: (text: string) => Promise<TranslateOutcome>;
-  /** 用指定翻译器（或第一个启用的）翻译文本。 */
+  /** 用指定翻译器（或第一个启用的）翻译文本；skipCache 为 true 时绕过缓存读取。 */
   translateWith: (
     text: string,
     translator?: TranslationExtension,
     context?: string[],
+    skipCache?: boolean,
   ) => Promise<TranslateOutcome>;
   /** 罗马音标注：若启用了 romanji 工具则返回罗马音，否则返回 null。 */
   romanizeJa: (text: string) => Promise<string | null>;
@@ -416,6 +417,7 @@ export function useExtensions(): ExtensionsContextValue {
       text: string,
       translator?: TranslationExtension,
       context?: string[],
+      skipCache = false,
     ): Promise<TranslateOutcome> => {
       if (!isTauri()) throw new Error("Translation is not available in the browser.");
       const t = translator ?? translators.find((ext) => ext.enabled);
@@ -429,6 +431,7 @@ export function useExtensions(): ExtensionsContextValue {
           settings: t.settings ?? {},
           timeoutMs: translateTimeoutMs,
           context: context ?? [],
+          skipCache,
         },
       });
       return { translation: result.translation, fromCache: result.fromCache, provider: t.provider };

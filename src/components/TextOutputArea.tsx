@@ -16,7 +16,7 @@ interface TextOutputAreaProps {
 export function TextOutputArea({ blocks, onDelete }: TextOutputAreaProps) {
   const { t } = useTranslation();
   const { hasEnabledTranslationProvider } = useExtensions();
-  const { translateBlock, retryBlock } = useHost();
+  const { translateBlock, retryBlock, retranslateBlock } = useHost();
   const parentRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const lastScrollTopRef = useRef(0);
@@ -137,6 +137,7 @@ export function TextOutputArea({ blocks, onDelete }: TextOutputAreaProps) {
                   onDelete={() => onDelete(block.id)}
                   onTranslate={(provider) => translateBlock(block.id, provider)}
                   onRetry={(provider) => retryBlock(block.id, provider)}
+                  onRetranslate={(provider) => retranslateBlock(block.id, provider)}
                 />
               </Box>
             );

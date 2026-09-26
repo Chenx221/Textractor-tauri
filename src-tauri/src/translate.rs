@@ -1,6 +1,8 @@
 //! 翻译后端：查 SQLite 缓存 → 未命中调用翻译提供商 → 写缓存 → 返回译文。
 //!
 //! `TranslateResult` 带 `from_cache` 标记，前端据此展示“来自缓存”。
+//! `TranslateRequest.skip_cache` 为 true 时跳过缓存读取（“重新翻译”），
+//! 但仍会把新译文写回缓存，便于后续命中。
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -25,6 +27,9 @@ pub struct TranslateRequest {
     pub timeout_ms: Option<i32>,
     #[serde(default)]
     pub context: Vec<String>,
+    /// 跳过缓存读取（“重新翻译”），仍然写入缓存。
+    #[serde(default)]
+    pub skip_cache: bool,
 }
 
 #[derive(Serialize)]
@@ -123,8 +128,8 @@ pub fn translate(
     db: &Mutex<rusqlite::Connection>,
     request: TranslateRequest,
 ) -> Result<TranslateResult, String> {
-    // 1. 查缓存（先释放锁再请求）。
-    {
+    // 1. 查缓存（先释放锁再请求）；“重新翻译”时跳过读取，强制请求提供商。
+    if !request.skip_cache {
         let conn = db.lock().map_err(|e| e.to_string())?;
         if let Some(cached) = cache_get(&conn, &request)? {
             return Ok(TranslateResult {
@@ -1045,6 +1050,7 @@ mod tests {
             settings: Value::Null,
             timeout_ms: Some(20_000),
             context: Vec::new(),
+            skip_cache: false,
         }
     }
 
@@ -1064,5 +1070,57 @@ mod tests {
         let out = bing_translate2(&bing2_request("auto-detect", "zh-Hans", "Good morning")).unwrap();
         println!("bing2 auto -> zh-Hans: {out}");
         assert!(!out.trim().is_empty());
+    }
+
+    /// 离线验证“重新翻译”的跳过缓存语义：`skip_cache = true` 时即使缓存里有
+    /// 结果也不会命中，而是再次调用提供商（这里用未知 provider 使调用失败，
+    /// 从而证明缓存读取确实被绕过）。
+    #[test]
+    fn skip_cache_bypasses_cached_result() {
+        let db = Mutex::new(rusqlite::Connection::open_in_memory().unwrap());
+        {
+            let conn = db.lock().unwrap();
+            conn.execute_batch(
+                "CREATE TABLE translation_cache (
+                    service TEXT NOT NULL,
+                    source_lang TEXT NOT NULL,
+                    target_lang TEXT NOT NULL,
+                    original_text TEXT NOT NULL,
+                    translated_text TEXT NOT NULL,
+                    PRIMARY KEY (service, source_lang, target_lang, original_text)
+                );",
+            )
+            .unwrap();
+        }
+
+        let request = |skip_cache: bool| TranslateRequest {
+            provider: "unknown-provider".to_string(),
+            source: "ja".to_string(),
+            target: "zh-Hans".to_string(),
+            text: "こんにちは".to_string(),
+            settings: Value::Null,
+            timeout_ms: None,
+            context: Vec::new(),
+            skip_cache,
+        };
+
+        // 预置一条缓存记录（provider 与之匹配）。
+        cache_put(&db.lock().unwrap(), &request(false), "你好").unwrap();
+
+        // 常规路径：命中缓存，不调用提供商（未知 provider 也不会报错）。
+        let cached = translate(&db, request(false)).unwrap();
+        assert!(cached.from_cache);
+        assert_eq!(cached.translation, "你好");
+
+        // 重新翻译：绕过缓存 → 真的去调用提供商 → 未知 provider 报错。
+        let message = match translate(&db, request(true)) {
+            Ok(_) => panic!("skip_cache=true 应绕过缓存并调用提供商"),
+            Err(e) => e,
+        };
+        assert!(message.contains("Unknown provider"), "意外错误：{message}");
+
+        // 绕过缓存后仍会写回缓存。
+        cache_put(&db.lock().unwrap(), &request(true), "您好").unwrap();
+        assert_eq!(translate(&db, request(false)).unwrap().translation, "您好");
     }
 }

@@ -42,6 +42,7 @@
     "delete": "Delete",
     "translate": "Translate",
     "retry": "Retry",
+    "retranslate": "Retranslate",
     "translationError": "Translation error",
     "fromCache": "cached",
     "clearOutput": "Clear current thread output",

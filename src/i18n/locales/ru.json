@@ -40,6 +40,7 @@
     "delete": "Удалить",
     "translate": "Перевести",
     "retry": "Повторить",
+    "retranslate": "Перевести заново",
     "translationError": "Ошибка перевода",
     "fromCache": "из кэша",
     "clearOutput": "Очистить вывод текущего потока",

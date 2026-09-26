@@ -40,6 +40,7 @@
     "delete": "Löschen",
     "translate": "Übersetzen",
     "retry": "Erneut versuchen",
+    "retranslate": "Neu übersetzen",
     "translationError": "Übersetzungsfehler",
     "fromCache": "zwischengespeichert",
     "clearOutput": "Ausgabe des aktuellen Threads löschen",

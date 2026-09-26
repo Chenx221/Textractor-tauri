@@ -42,6 +42,7 @@
     "delete": "削除",
     "translate": "翻訳",
     "retry": "再試行",
+    "retranslate": "再翻訳",
     "translationError": "翻訳エラー",
     "fromCache": "キャッシュ",
     "clearOutput": "現在のスレッド出力をクリア",

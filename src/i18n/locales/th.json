@@ -40,6 +40,7 @@
     "delete": "ลบ",
     "translate": "แปล",
     "retry": "ลองใหม่",
+    "retranslate": "แปลใหม่",
     "translationError": "ข้อผิดพลาดการแปล",
     "fromCache": "จากแคช",
     "clearOutput": "ล้างเอาต์พุตของเธรดปัจจุบัน",
