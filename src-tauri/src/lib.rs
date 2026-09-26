@@ -23,6 +23,26 @@ mod http;
 mod translate;
 #[cfg(target_os = "windows")]
 mod romanji;
+#[cfg(target_os = "windows")]
+mod romanji_dict;
+
+/// 非 Windows 平台占位：保持命令与前端调用签名一致。
+#[cfg(not(target_os = "windows"))]
+mod romanji_dict {
+    use super::RomanjiDictStatus;
+
+    pub fn status(_app: &tauri::AppHandle) -> Result<RomanjiDictStatus, String> {
+        Err("Romanji dictionary is only supported on Windows.".to_string())
+    }
+
+    pub fn install(_app: &tauri::AppHandle) -> Result<(), String> {
+        Err("Romanji dictionary is only supported on Windows.".to_string())
+    }
+
+    pub fn uninstall(_app: &tauri::AppHandle) -> Result<(), String> {
+        Err("Romanji dictionary is only supported on Windows.".to_string())
+    }
+}
 
 struct AppState {
     config_path: std::path::PathBuf,
@@ -33,6 +53,19 @@ struct AppState {
 struct SystemInfo {
     is_admin: bool,
     bitness: String,
+}
+
+/// 罗马音词典状态（前端据此显示是否已安装 / 体积 / 目录）。
+#[derive(Serialize)]
+pub struct RomanjiDictStatus {
+    pub installed: bool,
+    pub path: String,
+    pub size_bytes: u64,
+    pub version: String,
+    /// 已安装但版本与应用所需的词典版本不一致（需重新下载）。
+    pub outdated: bool,
+    /// 已安装但加载失败的原因（格式不匹配/文件损坏等）。
+    pub load_error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -452,6 +485,28 @@ async fn romanize_ja(text: String) -> Result<String, String> {
     }
 }
 
+/// 罗马音词典状态（是否已安装 / 目录 / 体积）。
+#[tauri::command]
+fn romanji_dict_status(app: tauri::AppHandle) -> Result<RomanjiDictStatus, String> {
+    romanji_dict::status(&app)
+}
+
+/// 下载并安装罗马音词典（预编译包约 10MB，解压后约 46MB）。
+#[tauri::command]
+async fn romanji_dict_install(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || romanji_dict::install(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 删除已安装的罗马音词典（删除后罗马音标注不再可用）。
+#[tauri::command]
+async fn romanji_dict_uninstall(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || romanji_dict::uninstall(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// 启动 WebSocket 服务端（监听指定端口，向已连接客户端广播文本）。
 #[tauri::command]
 fn ws_start_server(port: u16) -> Result<(), String> {
@@ -785,7 +840,9 @@ fn restart_elevated() -> Result<(), String> {
 mod process_win {
     use std::collections::HashMap;
     use std::sync::Mutex;
-    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows_sys::Win32::Foundation::{HWND, LPARAM};
+    // windows-sys 0.61 起基础类型 BOOL 移到 `core` 模块。
+    use windows_sys::core::BOOL;
     use windows_sys::Win32::System::Threading::{
         IsWow64Process, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     };
@@ -894,6 +951,11 @@ pub fn run() {
                 config_path,
                 db: Arc::new(Mutex::new(db)),
             });
+            // 罗马音词典改为运行时从数据目录加载（不再内嵌，减小可执行文件体积）。
+            #[cfg(target_os = "windows")]
+            if let Ok(data_dir) = app.path().app_config_dir() {
+                romanji::init(data_dir.join("dict").join("lindera-ipadic"));
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -931,6 +993,9 @@ pub fn run() {
             copy_to_clipboard,
             translate_text,
             romanize_ja,
+            romanji_dict_status,
+            romanji_dict_install,
+            romanji_dict_uninstall,
             ws_start_server,
             ws_stop_server,
             ws_broadcast,
@@ -957,4 +1022,28 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    /// `sysinfo` 升级后的运行时冒烟测试：确认仍能枚举到进程及其名称
+    /// （避免"编译通过但列表为空/字段丢失"这类行为变化）。
+    #[test]
+    fn sysinfo_enumerates_processes() {
+        let mut system = sysinfo::System::new_all();
+        system.refresh_all();
+        let processes = system.processes();
+        assert!(
+            !processes.is_empty(),
+            "sysinfo returned an empty process list"
+        );
+        assert!(
+            processes.values().any(|p| !p.name().is_empty()),
+            "no process with a name"
+        );
+        assert!(
+            processes.values().any(|p| p.exe().is_some()),
+            "no process exposes an executable path"
+        );
+    }
 }

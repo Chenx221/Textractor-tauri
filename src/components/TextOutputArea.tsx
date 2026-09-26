@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Fab, Tooltip, Typography } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import PauseOutlinedIcon from "@mui/icons-material/PauseOutlined";
+import PlayArrowOutlinedIcon from "@mui/icons-material/PlayArrowOutlined";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useExtensions } from "../extensions/ExtensionsContext";
@@ -16,7 +18,7 @@ interface TextOutputAreaProps {
 export function TextOutputArea({ blocks, onDelete }: TextOutputAreaProps) {
   const { t } = useTranslation();
   const { hasEnabledTranslationProvider } = useExtensions();
-  const { translateBlock, retryBlock, retranslateBlock } = useHost();
+  const { translateBlock, retryBlock, retranslateBlock, paused, setPaused } = useHost();
   const parentRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const lastScrollTopRef = useRef(0);
@@ -150,19 +152,46 @@ export function TextOutputArea({ blocks, onDelete }: TextOutputAreaProps) {
         )}
       </Box>
 
-      {!autoScroll && blocks.length > 0 && (
-        <Tooltip title={t("content.jumpToBottom")}>
+      {/* 右下角浮动按钮组：纵向自适应排列（暂停在上、跳到底部在下）。
+          跳到底部按钮隐藏时暂停会自动落到底部，不留空档。 */}
+      <Box
+        sx={{
+          position: "absolute",
+          right: 16,
+          bottom: 16,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 1,
+        }}
+      >
+        {/* 暂停（常显）：暂停后仍接收文本，但不自动请求翻译，
+            悬浮窗也保持显示暂停那一刻的文本。控制台线程不渲染本组件，故不显示。 */}
+        <Tooltip title={paused ? t("content.resume") : t("content.pause")}>
           <Fab
             size="small"
-            color="primary"
-            aria-label={t("content.jumpToBottom")}
-            onClick={scrollToBottom}
-            sx={{ position: "absolute", right: 16, bottom: 16 }}
+            color={paused ? "warning" : "default"}
+            aria-label={paused ? t("content.resume") : t("content.pause")}
+            aria-pressed={paused}
+            onClick={() => setPaused(!paused)}
           >
-            <KeyboardArrowDownIcon />
+            {paused ? <PlayArrowOutlinedIcon /> : <PauseOutlinedIcon />}
           </Fab>
         </Tooltip>
-      )}
+
+        {!autoScroll && blocks.length > 0 && (
+          <Tooltip title={t("content.jumpToBottom")}>
+            <Fab
+              size="small"
+              color="primary"
+              aria-label={t("content.jumpToBottom")}
+              onClick={scrollToBottom}
+            >
+              <KeyboardArrowDownIcon />
+            </Fab>
+          </Tooltip>
+        )}
+      </Box>
     </Box>
   );
 }

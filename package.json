@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "deps:check:js": "npm outdated",
+    "deps:check:rust": "cargo update --dry-run --manifest-path src-tauri/Cargo.toml",
+    "deps:audit": "npm audit"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -25,11 +28,11 @@
     "react-i18next": "^17.0.11"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.12.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
-    "@vitejs/plugin-react": "^4.6.0",
-    "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
   }
 }

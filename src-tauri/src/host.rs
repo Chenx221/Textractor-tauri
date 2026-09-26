@@ -21,9 +21,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_PIPE_CONNECTED, BOOL, HANDLE,
+    CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_PIPE_CONNECTED, HANDLE,
     INVALID_HANDLE_VALUE,
 };
+// windows-sys 0.61 起基础类型 BOOL 移到 `core` 模块。
+use windows_sys::core::BOOL;
 use windows_sys::Win32::Globalization::IsDBCSLeadByteEx;
 use windows_sys::Win32::Security::{
     InitializeSecurityDescriptor, SetSecurityDescriptorDacl, SECURITY_ATTRIBUTES,

@@ -422,7 +422,7 @@ export function useExtensions(): ExtensionsContextValue {
       if (!isTauri()) throw new Error("Translation is not available in the browser.");
       const t = translator ?? translators.find((ext) => ext.enabled);
       if (!t) throw new Error("No translation provider is enabled.");
-      const result = await invoke<{ translation: string; fromCache: boolean }>("translate_text", {
+      const result = await invoke<{ translation: string; from_cache: boolean }>("translate_text", {
         request: {
           provider: t.provider,
           source: t.sourceLanguage,
@@ -434,7 +434,7 @@ export function useExtensions(): ExtensionsContextValue {
           skipCache,
         },
       });
-      return { translation: result.translation, fromCache: result.fromCache, provider: t.provider };
+      return { translation: result.translation, fromCache: result.from_cache, provider: t.provider };
     },
     [translators, translateTimeoutMs],
   );

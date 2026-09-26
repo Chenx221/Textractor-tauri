@@ -2,7 +2,9 @@
 
 use std::ffi::c_void;
 
-use windows_sys::Win32::Foundation::{GetLastError, BOOL};
+use windows_sys::Win32::Foundation::GetLastError;
+// windows-sys 0.61 起基础类型 BOOL 移到 `core` 模块。
+use windows_sys::core::BOOL;
 use windows_sys::Win32::Networking::WinHttp::{
     WinHttpCloseHandle, WinHttpConnect, WinHttpOpen, WinHttpOpenRequest, WinHttpQueryDataAvailable,
     WinHttpReadData, WinHttpReceiveResponse, WinHttpSendRequest, WinHttpSetTimeouts,

@@ -28,6 +28,7 @@ import { useExtensions } from "../extensions/ExtensionsContext";
 import { useConfig } from "../settings/ConfigContext";
 import { TOOL_DEFS, TRANSLATOR_DEFS } from "../types/extensions";
 import type { FieldDef } from "../types/extensions";
+import { RomanjiDictPanel } from "./RomanjiDictPanel";
 
 interface ExtensionsDialogProps {
   open: boolean;
@@ -319,6 +320,8 @@ export function ExtensionsDialog({ open, onClose }: ExtensionsDialogProps) {
               </Box>
 
               {(def?.fields ?? []).map((field) => renderField(field, ext.settings, ext.id))}
+              {/* 罗马音标注依赖 IPADIC 词典，词典改为运行时下载安装。 */}
+              {ext.tool === "romanji" && <RomanjiDictPanel />}
             </Box>
           );
         })}

@@ -527,6 +527,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             sx={{ mb: 1.5 }}
           />
 
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
+            {t("settings.extraWindowWheelHint")}
+          </Typography>
+
           <FormControlLabel
             control={
               <Switch

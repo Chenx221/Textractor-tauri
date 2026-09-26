@@ -2,31 +2,105 @@
 //!
 //! 用 lindera（IPADIC）做形态素分析取得每个词的读音（片假名），再转成
 //! Hepburn 罗马音。供“罗马音标注”增强扩展调用，只影响显示，不影响翻译。
+//!
+//! 词典不再编译进可执行文件（内嵌约占 46MB），改为由 `romanji_dict` 在运行时
+//! 下载/解压到数据目录，这里按需从该目录动态加载；未安装时不显示罗马音。
 
 use std::borrow::Cow;
-use std::sync::{Mutex, OnceLock};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use lindera::dictionary::load_dictionary;
 use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
 
-/// 全局共享一个分词器（词典加载/初始化较慢，只做一次）。
-fn segmenter() -> &'static Mutex<Segmenter> {
-    static SEGMENTER: OnceLock<Mutex<Segmenter>> = OnceLock::new();
-    SEGMENTER.get_or_init(|| {
-        let dictionary = load_dictionary("embedded://ipadic")
-            .unwrap_or_else(|e| panic!("failed to load ipadic dictionary: {e:?}"));
-        Mutex::new(Segmenter::new(Mode::Normal, dictionary, None))
-    })
+/// 词典目录（应用启动时由 [`init`] 注入）。
+static DICT_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// 分词器缓存：`None` = 词典未安装或加载失败。
+static SEGMENTER: OnceLock<Mutex<Option<Segmenter>>> = OnceLock::new();
+
+/// 加载失败标记：避免每个文本块都重试加载数十 MB 的词典。
+static LOAD_FAILED: AtomicBool = AtomicBool::new(false);
+
+/// 最近一次加载失败的原因（供词典状态界面展示）。
+static LOAD_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+/// 注入词典目录（`setup` 中调用一次）。
+pub fn init(dict_dir: PathBuf) {
+    let _ = DICT_DIR.set(dict_dir);
+}
+
+/// 当前词典目录（未初始化时返回 `None`）。
+pub fn dict_dir() -> Option<&'static Path> {
+    DICT_DIR.get().map(PathBuf::as_path)
+}
+
+/// 词典是否已就位（只看 `metadata.json`，避免为探测而加载整个词典）。
+pub fn is_installed(dir: &Path) -> bool {
+    dir.join("metadata.json").is_file()
+}
+
+/// 丢弃缓存的分词器（安装/删除词典后调用）。
+pub fn invalidate() {
+    LOAD_FAILED.store(false, Ordering::Relaxed);
+    if let Ok(mut guard) = errors().lock() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = cache().lock() {
+        *guard = None;
+    }
+}
+
+/// 最近一次词典加载失败的原因（无失败时为 `None`）。
+pub fn load_error() -> Option<String> {
+    errors().lock().ok().and_then(|guard| guard.clone())
+}
+
+fn errors() -> &'static Mutex<Option<String>> {
+    LOAD_ERROR.get_or_init(|| Mutex::new(None))
+}
+
+fn cache() -> &'static Mutex<Option<Segmenter>> {
+    SEGMENTER.get_or_init(|| Mutex::new(None))
+}
+
+/// 取分词器锁，并确保词典已加载（未安装/加载失败时内部为 `None`）。
+fn loaded() -> Option<MutexGuard<'static, Option<Segmenter>>> {
+    let mut guard = cache().lock().ok()?;
+    if guard.is_none() && !LOAD_FAILED.load(Ordering::Relaxed) {
+        let Some(dir) = dict_dir() else {
+            return Some(guard);
+        };
+        let path = dir.to_string_lossy().to_string();
+        match load_dictionary(&path) {
+            Ok(dictionary) => *guard = Some(Segmenter::new(Mode::Normal, dictionary, None)),
+            Err(err) => {
+                // 词典缺失或格式版本不匹配：本次及后续调用都不再重试
+                // （安装/删除词典后会调用 `invalidate` 重置）。
+                let message = err.to_string();
+                eprintln!("[romanji] failed to load ipadic dictionary from {path}: {message}");
+                if let Ok(mut guard) = errors().lock() {
+                    *guard = Some(message);
+                }
+                LOAD_FAILED.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+    Some(guard)
 }
 
 /// 把一段日文转成罗马音（词间以空格分隔）。
-/// 无法分词的输入原样返回。
+/// 词典未安装时返回空串（前端据此不显示罗马音）；无法分词的输入原样返回。
 pub fn romanize_ja(text: &str) -> String {
-    let Ok(guard) = segmenter().lock() else {
-        return text.to_string();
+    let Some(mut guard) = loaded() else {
+        return String::new();
     };
-    let Ok(tokens) = guard.segment(Cow::Borrowed(text)) else {
+    let Some(segmenter) = guard.as_mut() else {
+        return String::new();
+    };
+    let Ok(tokens) = segmenter.segment(Cow::Borrowed(text)) else {
         return text.to_string();
     };
 
