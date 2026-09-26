@@ -9,7 +9,6 @@ import {
   Snackbar,
   Typography,
 } from "@mui/material";
-import GTranslateIcon from "@mui/icons-material/GTranslate";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -29,6 +28,11 @@ function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }
 
+/** 连点次数达到该值即打开开发者工具（Android 彩蛋风格）。 */
+const DEVTOOLS_CLICKS = 5;
+/** 第几次点击后开始显示“还差几次”的提示。 */
+const HINT_FROM_CLICK = 2;
+
 export function AboutDialog({ open, onClose }: AboutDialogProps) {
   const { t } = useTranslation();
   const [clickCount, setClickCount] = useState(0);
@@ -46,23 +50,24 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
     }
   }, [open]);
 
+  /** 连点彩蛋：第 2 次起提示还差几次，第 5 次打开开发者工具（Android 风格）。 */
   const handleLogoClick = () => {
     setClickCount((prev) => {
       const next = prev + 1;
-      if (next >= 10) {
+      if (next >= DEVTOOLS_CLICKS) {
         setHintOpen(false);
         if (isTauri()) {
           void invoke("open_devtools").catch(() => {});
         }
         return 0;
       }
-      if (next >= 5) setHintOpen(true);
+      setHintOpen(next >= HINT_FROM_CLICK);
       return next;
     });
   };
 
   const profile = buildInfo?.profile ?? (import.meta.env.PROD ? "release" : "debug");
-  const remaining = Math.max(0, 10 - clickCount);
+  const remaining = Math.max(0, DEVTOOLS_CLICKS - clickCount);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -81,7 +86,13 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
               "&:hover": { bgcolor: "primary.dark" },
             }}
           >
-            <GTranslateIcon sx={{ fontSize: 56 }} />
+            {/* 应用标识：字母 T（原先误用了 Google 翻译的图标）。 */}
+            <Typography
+              component="span"
+              sx={{ fontSize: 56, fontWeight: 700, lineHeight: 1, letterSpacing: "-0.04em" }}
+            >
+              T
+            </Typography>
           </IconButton>
         </Box>
 
@@ -104,7 +115,7 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
 
       <Snackbar
         open={hintOpen}
-        autoHideDuration={2000}
+        autoHideDuration={3000}
         onClose={() => setHintOpen(false)}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
