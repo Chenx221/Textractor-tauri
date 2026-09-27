@@ -98,7 +98,7 @@ jobs:
         with:
           tagName: ${{ steps.meta.outputs.tag }}
           releaseName: ${{ steps.meta.outputs.tag != '' && format('Textractor-tauri {0}', steps.meta.outputs.tag) || '' }}
-          releaseDraft: true
+          # releaseDraft: true
           prerelease: false
           updaterJsonPreferNsis: true
           args: --config src-tauri/tauri.release.conf.json
@@ -106,12 +106,12 @@ jobs:
             - `textractor-tauri_${{ steps.meta.outputs.version }}_x64-setup.exe`
             - `textractor-tauri_${{ steps.meta.outputs.version }}_x64_en-US.msi`
             - `textractor-tauri_${{ steps.meta.outputs.version }}_portable_x64.zip`
-            - `textractor-tauri_${{ steps.meta.outputs.version }}_x64.pdb`
+            - `textractor_tauri.pdb`
 
             Bundled texthook：`${{ steps.extras.outputs.texthook_asset }}`（Textractor `${{ steps.extras.outputs.texthook_tag }}`）
 
             First-time use note:
-            - Requires WebView2 Runtime
+            - Requires WebView2 Runtime: https://developer.microsoft.com/en-us/microsoft-edge/webview2
 
       - name: Make portable zip
         id: portable
@@ -123,19 +123,14 @@ jobs:
           "zip=$zip" >> $env:GITHUB_OUTPUT
           Write-Host "portable zip: $zip"
 
-      - name: Collect debug symbols (PDB)
+      - name: Check debug symbols (PDB)
         id: pdb
         shell: pwsh
         run: |
-          $src = "src-tauri/target/release/textractor_tauri.pdb"
-          if (-not (Test-Path $src)) {
-            if (-not $candidate) { throw "PDB not found ($src)" }
-          }
-          New-Item -ItemType Directory -Force -Path dist-symbols | Out-Null
-          $dest = "dist-symbols/textractor-tauri_${{ steps.meta.outputs.version }}_x64.pdb"
-          Copy-Item $src $dest -Force
-          "pdb=$dest" >> $env:GITHUB_OUTPUT
-          Write-Host "debug symbols: $dest ($([math]::Round((Get-Item $dest).Length / 1MB, 2)) MiB, from $src)"
+          $pdb = "src-tauri/target/release/textractor_tauri.pdb"
+          if (-not (Test-Path $pdb)) { throw "PDB not found: $pdb" }
+          "pdb=$pdb" >> $env:GITHUB_OUTPUT
+          Write-Host "debug symbols: $pdb ($([math]::Round((Get-Item $pdb).Length / 1MB, 2)) MiB)"
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
