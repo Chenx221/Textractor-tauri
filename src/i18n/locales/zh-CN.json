@@ -206,7 +206,34 @@
     "profile": "构建",
     "arch": "架构",
     "builtAt": "构建时间",
-    "clickHint": "再点击 {{count}} 次打开开发者工具"
+    "clickHint": "再点击 {{count}} 次打开开发者工具",
+    "update": {
+      "check": "检查更新",
+      "checking": "正在检查更新…",
+      "upToDate": "已是最新版本",
+      "available": "发现新版本 {{version}}",
+      "install": "下载并安装",
+      "downloading": "正在下载 {{percent}}%",
+      "installing": "正在安装…",
+      "done": "安装完成，正在重启…",
+      "error": "更新失败：{{error}}",
+      "open": "查看详情"
+    },
+    "texthook": {
+      "title": "texthook 组件",
+      "currentInstalled": "已运行时更新到 {{version}}",
+      "currentBundled": "随程序自带（{{version}}）",
+      "currentUnknown": "版本未知",
+      "check": "检查更新",
+      "checking": "正在检查…",
+      "upToDate": "已是最新版本",
+      "available": "texthook 有新版本 {{version}}",
+      "update": "更新到 {{version}}",
+      "working": "正在更新…",
+      "needsAdmin": "安装目录不可写，更新需要管理员权限",
+      "restartAdmin": "以管理员身份重启",
+      "error": "操作失败：{{error}}"
+    }
   },
   "attach": {
     "title": "附加到游戏",

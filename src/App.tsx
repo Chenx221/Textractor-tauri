@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Alert, Box, Snackbar } from "@mui/material";
+import { Alert, Box, Button, IconButton, Snackbar } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -19,6 +20,8 @@ import { SearchResultsDialog } from "./components/SearchResultsDialog";
 import { useHost, type SearchParam } from "./host/HostContext";
 import { useConfig } from "./settings/ConfigContext";
 import { useImageDataUri } from "./hooks/useImageDataUri";
+import { checkForUpdateVersion } from "./hooks/useUpdater";
+import { checkTexthookSilently } from "./hooks/useTexthook";
 import type { ProcessInfo } from "./types/process";
 
 interface SystemInfo {
@@ -50,6 +53,36 @@ export default function App() {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [attachedProcess, setAttachedProcess] = useState<ProcessInfo | null>(null);
   const [snackbarMessage, setSnackbarMessage] = useState("");
+  /** 启动时后台检查到的新版本（应用本体优先，其次 texthook 组件；非空则弹提示）。 */
+  const [updateNotice, setUpdateNotice] = useState<{ kind: "app" | "texthook"; version: string } | null>(
+    null,
+  );
+
+  // 启动后台静默检查更新：只在发现新版本时提示，不打扰用户（不阻塞任何启动流程）。
+  useEffect(() => {
+    if (!isTauri() || import.meta.env.DEV) return;
+    let disposed = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        // 应用本体更新更重要，有就先报它。
+        const appVersion = await checkForUpdateVersion();
+        if (disposed) return;
+        if (appVersion) {
+          setUpdateNotice({ kind: "app", version: appVersion });
+          return;
+        }
+        // texthook 组件更新（带 24h 节流，走缓存时不联网）。
+        const texthookVersion = await checkTexthookSilently();
+        if (!disposed && texthookVersion) {
+          setUpdateNotice({ kind: "texthook", version: texthookVersion });
+        }
+      })();
+    }, 4000);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -319,6 +352,44 @@ export default function App() {
           {snackbarMessage}
         </Alert>
       </Snackbar>
+      <Snackbar
+        open={updateNotice !== null}
+        autoHideDuration={12000}
+        onClose={() => setUpdateNotice(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        message={
+          updateNotice
+            ? t(
+                updateNotice.kind === "app"
+                  ? "about.update.available"
+                  : "about.texthook.available",
+                { version: updateNotice.version },
+              )
+            : ""
+        }
+        action={
+          <>
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => {
+                setUpdateNotice(null);
+                setAboutOpen(true);
+              }}
+            >
+              {t("about.update.open")}
+            </Button>
+            <IconButton
+              size="small"
+              color="inherit"
+              aria-label={t("settings.close")}
+              onClick={() => setUpdateNotice(null)}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </>
+        }
+      />
     </Box>
   );
 }

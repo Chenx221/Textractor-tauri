@@ -23,3 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 todo.md
+
+# 发布流程生成的中间产物（由 scripts/prepare-extras.ps1 与 scripts/make-portable.ps1 生成）
+src-tauri/extras/
+dist-portable/
+dist-symbols/
+.tmp-msi2/
+docs/

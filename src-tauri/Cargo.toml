@@ -21,6 +21,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = "0.39"
@@ -32,6 +34,8 @@ base64 = "0.23"
 tungstenite = "0.30"
 lindera = "6.2"
 zip = { version = "8", default-features = false, features = ["deflate"] }
+# texthook.dll 的运行时更新：解压上游 Chenx221/Textractor 的 7z（LZMA2 + BCJ2，纯 Rust 实现）
+sevenz-rust2 = "0.23"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

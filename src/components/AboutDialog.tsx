@@ -11,6 +11,8 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { UpdatePanel } from "./UpdatePanel";
+import { TexthookPanel } from "./TexthookPanel";
 
 interface AboutDialogProps {
   open: boolean;
@@ -111,6 +113,9 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
             {t("about.builtAt")}: {buildInfo?.built_at ?? "—"}
           </Typography>
         </Box>
+
+        <UpdatePanel />
+        <TexthookPanel />
       </DialogContent>
 
       <Snackbar

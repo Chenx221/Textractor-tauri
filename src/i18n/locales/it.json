@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "Processo collegato",
     "noProcess": "Nessun processo collegato",
@@ -187,7 +189,9 @@
     "wsClient": "Client WebSocket",
     "wsClientUrl": "URL del server"
   },
-  "extraWindow": { "unavailable": "La finestra mobile è disponibile solo nell'app desktop." },
+  "extraWindow": {
+    "unavailable": "La finestra mobile è disponibile solo nell'app desktop."
+  },
   "titlebar": {
     "bits64": "64 bit",
     "bits32": "32 bit",
@@ -200,7 +204,34 @@
     "profile": "Build",
     "arch": "Architettura",
     "builtAt": "Compilato il",
-    "clickHint": "Clicca altre {{count}} volte per aprire gli strumenti di sviluppo"
+    "clickHint": "Clicca altre {{count}} volte per aprire gli strumenti di sviluppo",
+    "update": {
+      "check": "Controlla aggiornamenti",
+      "checking": "Controllo aggiornamenti…",
+      "upToDate": "Hai l'ultima versione",
+      "available": "La versione {{version}} è disponibile",
+      "install": "Scarica e installa",
+      "downloading": "Download {{percent}} %",
+      "installing": "Installazione…",
+      "done": "Installata, riavvio…",
+      "error": "Aggiornamento non riuscito: {{error}}",
+      "open": "Dettagli"
+    },
+    "texthook": {
+      "title": "componente texthook",
+      "currentInstalled": "Aggiornato a runtime a {{version}}",
+      "currentBundled": "Incluso nell'app ({{version}})",
+      "currentUnknown": "Versione sconosciuta",
+      "check": "Controlla aggiornamenti",
+      "checking": "Controllo…",
+      "upToDate": "Già aggiornato",
+      "available": "Nuovo texthook {{version}} disponibile",
+      "update": "Aggiorna a {{version}}",
+      "working": "Aggiornamento…",
+      "needsAdmin": "La cartella di installazione non è scrivibile: servono i privilegi di amministratore",
+      "restartAdmin": "Riavvia come amministratore",
+      "error": "Errore: {{error}}"
+    }
   },
   "attach": {
     "title": "Collega al gioco",

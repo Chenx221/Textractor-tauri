@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "Processo anexado",
     "noProcess": "Nenhum processo anexado",
@@ -187,7 +189,9 @@
     "wsClient": "Cliente WebSocket",
     "wsClientUrl": "URL do servidor"
   },
-  "extraWindow": { "unavailable": "A janela flutuante só está disponível no aplicativo de desktop." },
+  "extraWindow": {
+    "unavailable": "A janela flutuante só está disponível no aplicativo de desktop."
+  },
   "titlebar": {
     "bits64": "64 bits",
     "bits32": "32 bits",
@@ -200,7 +204,34 @@
     "profile": "Build",
     "arch": "Arquitetura",
     "builtAt": "Compilado em",
-    "clickHint": "Clique mais {{count}} vezes para abrir as ferramentas de desenvolvimento"
+    "clickHint": "Clique mais {{count}} vezes para abrir as ferramentas de desenvolvimento",
+    "update": {
+      "check": "Verificar atualizações",
+      "checking": "Verificando atualizações…",
+      "upToDate": "Você está na versão mais recente",
+      "available": "A versão {{version}} está disponível",
+      "install": "Baixar e instalar",
+      "downloading": "Baixando {{percent}} %",
+      "installing": "Instalando…",
+      "done": "Instalada, reiniciando…",
+      "error": "Falha na atualização: {{error}}",
+      "open": "Detalhes"
+    },
+    "texthook": {
+      "title": "componente texthook",
+      "currentInstalled": "Atualizado em tempo de execução para {{version}}",
+      "currentBundled": "Incluído com o aplicativo ({{version}})",
+      "currentUnknown": "Versão desconhecida",
+      "check": "Verificar atualizações",
+      "checking": "Verificando…",
+      "upToDate": "Já está atualizado",
+      "available": "Novo texthook {{version}} disponível",
+      "update": "Atualizar para {{version}}",
+      "working": "Atualizando…",
+      "needsAdmin": "A pasta de instalação não permite gravação: são necessários privilégios de administrador",
+      "restartAdmin": "Reiniciar como administrador",
+      "error": "Falha: {{error}}"
+    }
   },
   "attach": {
     "title": "Anexar ao jogo",

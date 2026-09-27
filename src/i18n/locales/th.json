@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "โปรเซสที่เชื่อมอยู่",
     "noProcess": "ยังไม่ได้เชื่อมโปรเซส",
@@ -187,7 +189,9 @@
     "wsClient": "ไคลเอนต์ WebSocket",
     "wsClientUrl": "URL เซิร์ฟเวอร์"
   },
-  "extraWindow": { "unavailable": "หน้าต่างลอยใช้งานได้เฉพาะในแอปเดสก์ท็อป" },
+  "extraWindow": {
+    "unavailable": "หน้าต่างลอยใช้งานได้เฉพาะในแอปเดสก์ท็อป"
+  },
   "titlebar": {
     "bits64": "64 บิต",
     "bits32": "32 บิต",
@@ -200,7 +204,34 @@
     "profile": "บิลด์",
     "arch": "สถาปัตยกรรม",
     "builtAt": "บิลด์เมื่อ",
-    "clickHint": "คลิกอีก {{count}} ครั้งเพื่อเปิดเครื่องมือนักพัฒนา"
+    "clickHint": "คลิกอีก {{count}} ครั้งเพื่อเปิดเครื่องมือนักพัฒนา",
+    "update": {
+      "check": "ตรวจสอบอัปเดต",
+      "checking": "กำลังตรวจสอบอัปเดต…",
+      "upToDate": "คุณใช้เวอร์ชันล่าสุดแล้ว",
+      "available": "มีเวอร์ชัน {{version}} ให้ใช้งาน",
+      "install": "ดาวน์โหลดและติดตั้ง",
+      "downloading": "กำลังดาวน์โหลด {{percent}}%",
+      "installing": "กำลังติดตั้ง…",
+      "done": "ติดตั้งแล้ว กำลังรีสตาร์ท…",
+      "error": "อัปเดตล้มเหลว: {{error}}",
+      "open": "รายละเอียด"
+    },
+    "texthook": {
+      "title": "คอมโพเนนต์ texthook",
+      "currentInstalled": "อัปเดตขณะทำงานเป็น {{version}}",
+      "currentBundled": "มาพร้อมแอป ({{version}})",
+      "currentUnknown": "ไม่ทราบเวอร์ชัน",
+      "check": "ตรวจสอบอัปเดต",
+      "checking": "กำลังตรวจสอบ…",
+      "upToDate": "เป็นเวอร์ชันล่าสุดแล้ว",
+      "available": "มี texthook ใหม่ {{version}}",
+      "update": "อัปเดตเป็น {{version}}",
+      "working": "กำลังอัปเดต…",
+      "needsAdmin": "โฟลเดอร์ติดตั้งเขียนไม่ได้ — การอัปเดตต้องใช้สิทธิ์ผู้ดูแลระบบ",
+      "restartAdmin": "รีสตาร์ทในฐานะผู้ดูแลระบบ",
+      "error": "ล้มเหลว: {{error}}"
+    }
   },
   "attach": {
     "title": "เชื่อมเกม",

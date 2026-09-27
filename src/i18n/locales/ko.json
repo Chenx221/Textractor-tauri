@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "부착된 프로세스",
     "noProcess": "부착된 프로세스 없음",
@@ -187,7 +189,9 @@
     "wsClient": "WebSocket 클라이언트",
     "wsClientUrl": "서버 URL"
   },
-  "extraWindow": { "unavailable": "플로팅 창은 데스크톱 앱에서만 사용할 수 있습니다." },
+  "extraWindow": {
+    "unavailable": "플로팅 창은 데스크톱 앱에서만 사용할 수 있습니다."
+  },
   "titlebar": {
     "bits64": "64비트",
     "bits32": "32비트",
@@ -200,7 +204,34 @@
     "profile": "빌드",
     "arch": "아키텍처",
     "builtAt": "빌드 날짜",
-    "clickHint": "개발자 도구를 열려면 {{count}}번 더 클릭하세요"
+    "clickHint": "개발자 도구를 열려면 {{count}}번 더 클릭하세요",
+    "update": {
+      "check": "업데이트 확인",
+      "checking": "업데이트 확인 중…",
+      "upToDate": "최신 버전입니다",
+      "available": "새 버전 {{version}} 사용 가능",
+      "install": "다운로드 및 설치",
+      "downloading": "다운로드 중 {{percent}}%",
+      "installing": "설치 중…",
+      "done": "설치 완료, 재시작 중…",
+      "error": "업데이트 실패: {{error}}",
+      "open": "자세히"
+    },
+    "texthook": {
+      "title": "texthook 구성 요소",
+      "currentInstalled": "런타임에서 {{version}} 으로 업데이트됨",
+      "currentBundled": "앱에 포함됨 ({{version}})",
+      "currentUnknown": "버전 알 수 없음",
+      "check": "업데이트 확인",
+      "checking": "확인 중…",
+      "upToDate": "최신 버전입니다",
+      "available": "새 texthook {{version}} 사용 가능",
+      "update": "{{version}} 으로 업데이트",
+      "working": "업데이트 중…",
+      "needsAdmin": "설치 폴더에 쓸 수 없습니다. 업데이트에는 관리자 권한이 필요합니다",
+      "restartAdmin": "관리자 권한으로 재시작",
+      "error": "실패: {{error}}"
+    }
   },
   "attach": {
     "title": "게임에 부착",

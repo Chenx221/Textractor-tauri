@@ -204,7 +204,34 @@
     "profile": "ビルド",
     "arch": "アーキテクチャ",
     "builtAt": "ビルド日時",
-    "clickHint": "あと {{count}} 回クリックで開発者ツールが開きます"
+    "clickHint": "あと {{count}} 回クリックで開発者ツールが開きます",
+    "update": {
+      "check": "更新を確認",
+      "checking": "更新を確認しています…",
+      "upToDate": "最新バージョンです",
+      "available": "新しいバージョン {{version}} があります",
+      "install": "ダウンロードしてインストール",
+      "downloading": "ダウンロード中 {{percent}}%",
+      "installing": "インストール中…",
+      "done": "インストール完了、再起動しています…",
+      "error": "更新に失敗しました: {{error}}",
+      "open": "詳細"
+    },
+    "texthook": {
+      "title": "texthook コンポーネント",
+      "currentInstalled": "実行時に {{version}} へ更新済み",
+      "currentBundled": "アプリ同梱（{{version}}）",
+      "currentUnknown": "バージョン不明",
+      "check": "更新を確認",
+      "checking": "確認しています…",
+      "upToDate": "最新です",
+      "available": "新しい texthook {{version}} があります",
+      "update": "{{version}} に更新",
+      "working": "更新しています…",
+      "needsAdmin": "インストール先に書き込めません。更新には管理者権限が必要です",
+      "restartAdmin": "管理者として再起動",
+      "error": "失敗しました: {{error}}"
+    }
   },
   "attach": {
     "title": "ゲームに接続",

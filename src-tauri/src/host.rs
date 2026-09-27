@@ -250,7 +250,8 @@ fn emit_console(app: &AppHandle, message: impl Into<String>) {
     });
 }
 
-fn exe_dir() -> Option<PathBuf> {
+/// exe 所在目录（texthook.dll / x86 注入器都相对它定位）。
+pub(crate) fn exe_dir() -> Option<PathBuf> {
     unsafe {
         let mut buf = vec![0u16; 32_768];
         let len = GetModuleFileNameW(std::ptr::null_mut(), buf.as_mut_ptr(), buf.len() as u32);
@@ -857,6 +858,11 @@ pub fn start(app: AppHandle, config_dir: PathBuf) {
     std::thread::spawn(move || accept_loop(app));
 }
 
+/// 向控制台面板推送一条消息（texthook 更新等旁路模块也用它）。
+pub(crate) fn console(app: &AppHandle, message: impl Into<String>) {
+    emit_console(app, message)
+}
+
 /// 把 `texthook.dll` 注入目标进程。
 pub fn inject_process(pid: u32, app: AppHandle) {
     std::thread::spawn(move || {
@@ -996,14 +1002,15 @@ pub fn detach_process(pid: u32) -> Result<(), String> {
     }
 }
 
-/// 对所有已连接进程发送 detach（退出程序时调用）。
-pub fn detach_all() {
+/// 对所有已连接进程发送 detach（退出程序时调用），返回分离的进程数。
+pub fn detach_all() -> usize {
     let pids: Vec<u32> = PROCESSES.lock().unwrap().keys().copied().collect();
-    for pid in pids {
-        let _ = send(pid, &proto::build_detach_cmd());
+    for pid in pids.iter() {
+        let _ = send(*pid, &proto::build_detach_cmd());
     }
     // 给 DLL 一点时间处理 detach 并卸载自身，避免程序退出后 hook 残留。
     std::thread::sleep(std::time::Duration::from_millis(500));
+    pids.len()
 }
 
 pub fn insert_hook(app: &AppHandle, pid: u32, code: String) -> Result<(), String> {

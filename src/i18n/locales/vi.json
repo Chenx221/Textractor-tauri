@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "Tiến trình đã gắn",
     "noProcess": "Chưa gắn tiến trình nào",
@@ -187,7 +189,9 @@
     "wsClient": "Máy khách WebSocket",
     "wsClientUrl": "URL máy chủ"
   },
-  "extraWindow": { "unavailable": "Cửa sổ nổi chỉ khả dụng trong ứng dụng desktop." },
+  "extraWindow": {
+    "unavailable": "Cửa sổ nổi chỉ khả dụng trong ứng dụng desktop."
+  },
   "titlebar": {
     "bits64": "64-bit",
     "bits32": "32-bit",
@@ -200,7 +204,34 @@
     "profile": "Bản build",
     "arch": "Kiến trúc",
     "builtAt": "Xây dựng lúc",
-    "clickHint": "Nhấp thêm {{count}} lần để mở công cụ phát triển"
+    "clickHint": "Nhấp thêm {{count}} lần để mở công cụ phát triển",
+    "update": {
+      "check": "Kiểm tra cập nhật",
+      "checking": "Đang kiểm tra cập nhật…",
+      "upToDate": "Bạn đang dùng phiên bản mới nhất",
+      "available": "Đã có phiên bản {{version}}",
+      "install": "Tải và cài đặt",
+      "downloading": "Đang tải {{percent}}%",
+      "installing": "Đang cài đặt…",
+      "done": "Đã cài đặt, đang khởi động lại…",
+      "error": "Cập nhật thất bại: {{error}}",
+      "open": "Chi tiết"
+    },
+    "texthook": {
+      "title": "thành phần texthook",
+      "currentInstalled": "Đã cập nhật khi chạy lên {{version}}",
+      "currentBundled": "Đi kèm ứng dụng ({{version}})",
+      "currentUnknown": "Không rõ phiên bản",
+      "check": "Kiểm tra cập nhật",
+      "checking": "Đang kiểm tra…",
+      "upToDate": "Đã là bản mới nhất",
+      "available": "Có texthook mới {{version}}",
+      "update": "Cập nhật lên {{version}}",
+      "working": "Đang cập nhật…",
+      "needsAdmin": "Thư mục cài đặt không ghi được — cập nhật cần quyền quản trị",
+      "restartAdmin": "Khởi động lại với quyền admin",
+      "error": "Thất bại: {{error}}"
+    }
   },
   "attach": {
     "title": "Gắn vào game",

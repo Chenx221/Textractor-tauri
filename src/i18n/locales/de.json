@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "Verbundener Prozess",
     "noProcess": "Kein Prozess verbunden",
@@ -187,7 +189,9 @@
     "wsClient": "WebSocket-Client",
     "wsClientUrl": "Server-URL"
   },
-  "extraWindow": { "unavailable": "Das Schwebefenster ist nur in der Desktop-App verfügbar." },
+  "extraWindow": {
+    "unavailable": "Das Schwebefenster ist nur in der Desktop-App verfügbar."
+  },
   "titlebar": {
     "bits64": "64-Bit",
     "bits32": "32-Bit",
@@ -200,7 +204,34 @@
     "profile": "Build",
     "arch": "Architektur",
     "builtAt": "Erstellt am",
-    "clickHint": "Klicke noch {{count}} Mal, um die Entwicklertools zu öffnen"
+    "clickHint": "Klicke noch {{count}} Mal, um die Entwicklertools zu öffnen",
+    "update": {
+      "check": "Nach Updates suchen",
+      "checking": "Suche nach Updates…",
+      "upToDate": "Sie sind auf dem neuesten Stand",
+      "available": "Version {{version}} ist verfügbar",
+      "install": "Herunterladen & installieren",
+      "downloading": "Wird heruntergeladen {{percent}} %",
+      "installing": "Wird installiert…",
+      "done": "Installiert, Neustart…",
+      "error": "Update fehlgeschlagen: {{error}}",
+      "open": "Details"
+    },
+    "texthook": {
+      "title": "texthook-Komponente",
+      "currentInstalled": "Zur Laufzeit auf {{version}} aktualisiert",
+      "currentBundled": "Mit der App geliefert ({{version}})",
+      "currentUnknown": "Version unbekannt",
+      "check": "Nach Updates suchen",
+      "checking": "Suche…",
+      "upToDate": "Bereits aktuell",
+      "available": "Neues texthook {{version}} verfügbar",
+      "update": "Auf {{version}} aktualisieren",
+      "working": "Wird aktualisiert…",
+      "needsAdmin": "Der Installationsordner ist nicht beschreibbar – zum Aktualisieren sind Administratorrechte nötig",
+      "restartAdmin": "Als Administrator neu starten",
+      "error": "Fehlgeschlagen: {{error}}"
+    }
   },
   "attach": {
     "title": "An Spiel anhängen",

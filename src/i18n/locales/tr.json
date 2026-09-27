@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "Bağlı süreç",
     "noProcess": "Bağlı süreç yok",
@@ -187,7 +189,9 @@
     "wsClient": "WebSocket istemcisi",
     "wsClientUrl": "Sunucu URL'si"
   },
-  "extraWindow": { "unavailable": "Yüzen pencere yalnızca masaüstü uygulamasında kullanılabilir." },
+  "extraWindow": {
+    "unavailable": "Yüzen pencere yalnızca masaüstü uygulamasında kullanılabilir."
+  },
   "titlebar": {
     "bits64": "64 bit",
     "bits32": "32 bit",
@@ -200,7 +204,34 @@
     "profile": "Derleme",
     "arch": "Mimari",
     "builtAt": "Derleme zamanı",
-    "clickHint": "Geliştirici araçlarını açmak için {{count}} kez daha tıklayın"
+    "clickHint": "Geliştirici araçlarını açmak için {{count}} kez daha tıklayın",
+    "update": {
+      "check": "Güncellemeleri denetle",
+      "checking": "Güncellemeler denetleniyor…",
+      "upToDate": "En son sürümü kullanıyorsunuz",
+      "available": "{{version}} sürümü mevcut",
+      "install": "İndir ve kur",
+      "downloading": "İndiriliyor %{{percent}}",
+      "installing": "Kuruluyor…",
+      "done": "Kuruldu, yeniden başlatılıyor…",
+      "error": "Güncelleme başarısız: {{error}}",
+      "open": "Ayrıntılar"
+    },
+    "texthook": {
+      "title": "texthook bileşeni",
+      "currentInstalled": "Çalışma anında {{version}} sürümüne güncellendi",
+      "currentBundled": "Uygulamayla birlikte gelir ({{version}})",
+      "currentUnknown": "Sürüm bilinmiyor",
+      "check": "Güncellemeleri denetle",
+      "checking": "Denetleniyor…",
+      "upToDate": "Zaten güncel",
+      "available": "Yeni texthook {{version}} mevcut",
+      "update": "{{version}} sürümüne güncelle",
+      "working": "Güncelleniyor…",
+      "needsAdmin": "Kurulum klasörü yazılabilir değil — güncelleme için yönetici hakları gerekir",
+      "restartAdmin": "Yönetici olarak yeniden başlat",
+      "error": "Başarısız: {{error}}"
+    }
   },
   "attach": {
     "title": "Oyuna bağla",

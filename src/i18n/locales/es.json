@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "Proceso adjuntado",
     "noProcess": "Ningún proceso adjuntado",
@@ -187,7 +189,9 @@
     "wsClient": "Cliente WebSocket",
     "wsClientUrl": "URL del servidor"
   },
-  "extraWindow": { "unavailable": "La ventana flotante solo está disponible en la aplicación de escritorio." },
+  "extraWindow": {
+    "unavailable": "La ventana flotante solo está disponible en la aplicación de escritorio."
+  },
   "titlebar": {
     "bits64": "64 bits",
     "bits32": "32 bits",
@@ -200,7 +204,34 @@
     "profile": "Compilación",
     "arch": "Arquitectura",
     "builtAt": "Compilado el",
-    "clickHint": "Haz clic {{count}} veces más para abrir las herramientas de desarrollo"
+    "clickHint": "Haz clic {{count}} veces más para abrir las herramientas de desarrollo",
+    "update": {
+      "check": "Buscar actualizaciones",
+      "checking": "Buscando actualizaciones…",
+      "upToDate": "Estás en la última versión",
+      "available": "La versión {{version}} está disponible",
+      "install": "Descargar e instalar",
+      "downloading": "Descargando {{percent}} %",
+      "installing": "Instalando…",
+      "done": "Instalada, reiniciando…",
+      "error": "Error de actualización: {{error}}",
+      "open": "Detalles"
+    },
+    "texthook": {
+      "title": "componente texthook",
+      "currentInstalled": "Actualizado en tiempo de ejecución a {{version}}",
+      "currentBundled": "Incluido con la aplicación ({{version}})",
+      "currentUnknown": "Versión desconocida",
+      "check": "Buscar actualizaciones",
+      "checking": "Comprobando…",
+      "upToDate": "Ya está actualizado",
+      "available": "Nuevo texthook {{version}} disponible",
+      "update": "Actualizar a {{version}}",
+      "working": "Actualizando…",
+      "needsAdmin": "La carpeta de instalación no permite escritura: se necesitan permisos de administrador",
+      "restartAdmin": "Reiniciar como administrador",
+      "error": "Error: {{error}}"
+    }
   },
   "attach": {
     "title": "Adjuntar al juego",

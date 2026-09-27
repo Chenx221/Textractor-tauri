@@ -75,5 +75,16 @@
         "displayLanguageSelector": true
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Chenx221/Textractor-tauri/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY2OUQ1ODg5RjJGRDA3QTUKUldTbEIvM3lpVmlkWnRXdU5pY3QzWmswc2NUSXBFRVFtYTcwcFoyWGZpOGRLQWUrOXlaMlJBNjIK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

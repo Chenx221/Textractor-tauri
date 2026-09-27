@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "已附加的程序",
     "noProcess": "尚未附加任何程序",
@@ -189,7 +191,9 @@
     "wsClient": "WebSocket 用戶端",
     "wsClientUrl": "伺服器位址"
   },
-  "extraWindow": { "unavailable": "懸浮視窗僅在桌面應用程式中可用。" },
+  "extraWindow": {
+    "unavailable": "懸浮視窗僅在桌面應用程式中可用。"
+  },
   "titlebar": {
     "bits64": "64 位元",
     "bits32": "32 位元",
@@ -202,7 +206,34 @@
     "profile": "建置",
     "arch": "架構",
     "builtAt": "建置於",
-    "clickHint": "再點擊 {{count}} 次以開啟開發者工具"
+    "clickHint": "再點擊 {{count}} 次以開啟開發者工具",
+    "update": {
+      "check": "檢查更新",
+      "checking": "正在檢查更新…",
+      "upToDate": "已是最新版本",
+      "available": "發現新版本 {{version}}",
+      "install": "下載並安裝",
+      "downloading": "正在下載 {{percent}}%",
+      "installing": "正在安裝…",
+      "done": "安裝完成，正在重新啟動…",
+      "error": "更新失敗：{{error}}",
+      "open": "查看詳情"
+    },
+    "texthook": {
+      "title": "texthook 元件",
+      "currentInstalled": "已於執行時更新至 {{version}}",
+      "currentBundled": "隨程式內建（{{version}}）",
+      "currentUnknown": "版本未知",
+      "check": "檢查更新",
+      "checking": "正在檢查…",
+      "upToDate": "已是最新版本",
+      "available": "texthook 有新版本 {{version}}",
+      "update": "更新至 {{version}}",
+      "working": "正在更新…",
+      "needsAdmin": "安裝目錄不可寫入，更新需要管理員權限",
+      "restartAdmin": "以管理員身分重新啟動",
+      "error": "操作失敗：{{error}}"
+    }
   },
   "attach": {
     "title": "附加到遊戲",

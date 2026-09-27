@@ -25,6 +25,8 @@ mod translate;
 mod romanji;
 #[cfg(target_os = "windows")]
 mod romanji_dict;
+#[cfg(target_os = "windows")]
+mod texthook;
 
 /// 非 Windows 平台占位：保持命令与前端调用签名一致。
 #[cfg(not(target_os = "windows"))]
@@ -42,6 +44,85 @@ mod romanji_dict {
     pub fn uninstall(_app: &tauri::AppHandle) -> Result<(), String> {
         Err("Romanji dictionary is only supported on Windows.".to_string())
     }
+}
+
+/// 非 Windows 平台占位：保持命令与前端调用签名一致。
+#[cfg(not(target_os = "windows"))]
+mod texthook {
+    use super::{TexthookCheck, TexthookStatus, TexthookUpdateResult};
+
+    fn unsupported<T>() -> Result<T, String> {
+        Err("texthook runtime update is only supported on Windows.".to_string())
+    }
+
+    pub fn status(_app: &tauri::AppHandle) -> Result<TexthookStatus, String> {
+        unsupported()
+    }
+
+    pub fn check(_app: &tauri::AppHandle, _force: bool) -> Result<TexthookCheck, String> {
+        unsupported()
+    }
+
+    pub fn install(
+        _app: &tauri::AppHandle,
+        _tag: Option<String>,
+    ) -> Result<TexthookUpdateResult, String> {
+        unsupported()
+    }
+}
+
+/// texthook 当前状态（前端面板用）。
+#[derive(Serialize)]
+pub struct TexthookStatus {
+    /// exe 所在目录。
+    pub dir: String,
+    /// x64 texthook.dll 的完整路径。
+    pub dll_path: String,
+    /// x86 texthook.dll 的完整路径。
+    pub x86_dll_path: String,
+    /// 当前生效的版本 tag（无法判断时为 null）。
+    pub tag: Option<String>,
+    /// `installed`（运行时更新过）/ `bundled`（随程序自带）/ `unknown`。
+    pub source: String,
+    /// exe 目录（含 x86 子目录）是否可写；false 表示更新需要管理员权限。
+    pub writable: bool,
+    /// 上次检查到的上游 tag（不联网，来自缓存）。
+    pub upstream_tag: Option<String>,
+    /// 上次检查时间（Unix 秒）。
+    pub last_check: u64,
+}
+
+/// 上游 texthook 的检查结果。
+#[derive(Serialize)]
+pub struct TexthookCheck {
+    /// 上游最新 tag。
+    pub tag: String,
+    /// 选中的资产名。
+    pub asset: String,
+    /// 资产大小（字节；命中缓存时为 0）。
+    pub size: u64,
+    /// 资产下载地址（命中缓存时为空）。
+    pub url: String,
+    /// 当前生效版本。
+    pub current_tag: Option<String>,
+    /// 是否需要更新。
+    pub has_update: bool,
+    /// release notes（截断）。
+    pub notes: String,
+    /// 结果来自 24h 缓存（未联网）。
+    pub cached: bool,
+    /// exe 目录是否可写。
+    pub writable: bool,
+}
+
+/// texthook 更新结果。
+#[derive(Serialize)]
+pub struct TexthookUpdateResult {
+    pub tag: String,
+    pub x64_bytes: u64,
+    pub x86_bytes: u64,
+    pub dll_path: String,
+    pub x86_dll_path: String,
 }
 
 struct AppState {
@@ -507,6 +588,36 @@ async fn romanji_dict_uninstall(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?
 }
 
+/// texthook.dll 的本地状态（当前版本 / 来源 / 目录是否可写）。不联网。
+#[tauri::command]
+fn texthook_status(app: tauri::AppHandle) -> Result<TexthookStatus, String> {
+    texthook::status(&app)
+}
+
+/// 检查上游 `Chenx221/Textractor` 是否有更新的 texthook。
+/// `force = false` 时 24 小时内的结果直接走缓存（启动时的静默检查用）。
+#[tauri::command]
+async fn texthook_check(
+    app: tauri::AppHandle,
+    force: Option<bool>,
+) -> Result<TexthookCheck, String> {
+    let force = force.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || texthook::check(&app, force))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 下载并就地更新 texthook.dll（x64 + x86）。目录不可写时返回 `NEED_ADMIN:` 开头的错误。
+#[tauri::command]
+async fn texthook_update(
+    app: tauri::AppHandle,
+    tag: Option<String>,
+) -> Result<TexthookUpdateResult, String> {
+    tauri::async_runtime::spawn_blocking(move || texthook::install(&app, tag))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// 启动 WebSocket 服务端（监听指定端口，向已连接客户端广播文本）。
 #[tauri::command]
 fn ws_start_server(port: u16) -> Result<(), String> {
@@ -931,6 +1042,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&config_dir)?;
@@ -996,6 +1109,9 @@ pub fn run() {
             romanji_dict_status,
             romanji_dict_install,
             romanji_dict_uninstall,
+            texthook_status,
+            texthook_check,
+            texthook_update,
             ws_start_server,
             ws_stop_server,
             ws_broadcast,

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "createUpdaterArtifacts": true,
+    "resources": {
+      "extras/texthook.dll": "texthook.dll",
+      "extras/x86/texthook.dll": "x86/texthook.dll",
+      "extras/x86/texthook-injector32.exe": "x86/texthook-injector32.exe",
+      "extras/data.lnk": "data.lnk",
+      "extras/texthook.json": "texthook-bundled.json"
+    }
+  }
+}

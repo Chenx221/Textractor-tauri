@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "Присоединённый процесс",
     "noProcess": "Процесс не присоединён",
@@ -187,7 +189,9 @@
     "wsClient": "WebSocket-клиент",
     "wsClientUrl": "URL сервера"
   },
-  "extraWindow": { "unavailable": "Плавающее окно доступно только в настольном приложении." },
+  "extraWindow": {
+    "unavailable": "Плавающее окно доступно только в настольном приложении."
+  },
   "titlebar": {
     "bits64": "64-бит",
     "bits32": "32-бит",
@@ -200,7 +204,34 @@
     "profile": "Сборка",
     "arch": "Архитектура",
     "builtAt": "Собрано",
-    "clickHint": "Кликните ещё {{count}} раз, чтобы открыть инструменты разработчика"
+    "clickHint": "Кликните ещё {{count}} раз, чтобы открыть инструменты разработчика",
+    "update": {
+      "check": "Проверить обновления",
+      "checking": "Проверка обновлений…",
+      "upToDate": "Установлена последняя версия",
+      "available": "Доступна версия {{version}}",
+      "install": "Скачать и установить",
+      "downloading": "Загрузка {{percent}} %",
+      "installing": "Установка…",
+      "done": "Установлено, перезапуск…",
+      "error": "Не удалось обновить: {{error}}",
+      "open": "Подробности"
+    },
+    "texthook": {
+      "title": "компонент texthook",
+      "currentInstalled": "Обновлено на лету до {{version}}",
+      "currentBundled": "В комплекте с приложением ({{version}})",
+      "currentUnknown": "Версия неизвестна",
+      "check": "Проверить обновления",
+      "checking": "Проверка…",
+      "upToDate": "Уже актуально",
+      "available": "Доступен новый texthook {{version}}",
+      "update": "Обновить до {{version}}",
+      "working": "Обновление…",
+      "needsAdmin": "Папка установки недоступна для записи — для обновления нужны права администратора",
+      "restartAdmin": "Перезапустить от администратора",
+      "error": "Ошибка: {{error}}"
+    }
   },
   "attach": {
     "title": "Присоединить к игре",

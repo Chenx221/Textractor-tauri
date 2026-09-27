@@ -1,0 +1,161 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        required: false
+        default: ""
+      texthook_tag:
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc,i686-pc-windows-msvc
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri
+            injector32
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Resolve tag and version
+        id: meta
+        shell: pwsh
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          $tag = if ("${{ github.event_name }}" -eq "push") { "${{ github.ref_name }}" } else { "$env:DISPATCH_TAG".Trim() }
+          if ($tag) {
+            # v260927 to 26.9.27
+            $version = (node scripts/set-version.mjs $tag).Trim()
+            if ($LASTEXITCODE -ne 0) { throw "set-version.mjs failed" }
+          } else {
+            $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "tag='$tag' version='$version'"
+
+      - name: Check updater public key
+        shell: pwsh
+        run: |
+          $pubkey = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).plugins.updater.pubkey
+          Write-Host "updater public key is configured"
+
+      - name: Check signing key
+        shell: pwsh
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace("$env:KEY")) {
+            throw "missing secret TAURI_SIGNING_PRIVATE_KEY"
+          }
+
+      - name: Prepare extras (texthook.dll / injector32 / data.lnk)
+        id: extras
+        shell: pwsh
+        env:
+          TEXTHOOK_TAG: ${{ inputs.texthook_tag }}
+        run: |
+          ./scripts/prepare-extras.ps1 -TexthookTag "$env:TEXTHOOK_TAG"
+          $meta = Get-Content src-tauri/extras/texthook.json -Raw | ConvertFrom-Json
+          "texthook_tag=$($meta.texthookTag)" >> $env:GITHUB_OUTPUT
+          "texthook_asset=$($meta.texthookAsset)" >> $env:GITHUB_OUTPUT
+
+      - name: Build and release
+        id: tauri
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ steps.meta.outputs.tag }}
+          releaseName: ${{ steps.meta.outputs.tag != '' && format('Textractor-tauri {0}', steps.meta.outputs.tag) || '' }}
+          releaseDraft: true
+          prerelease: false
+          updaterJsonPreferNsis: true
+          args: --config src-tauri/tauri.release.conf.json
+          releaseBody: |
+            - `textractor-tauri_${{ steps.meta.outputs.version }}_x64-setup.exe`
+            - `textractor-tauri_${{ steps.meta.outputs.version }}_x64_en-US.msi`
+            - `textractor-tauri_${{ steps.meta.outputs.version }}_portable_x64.zip`
+            - `textractor-tauri_${{ steps.meta.outputs.version }}_x64.pdb`
+
+            Bundled texthook：`${{ steps.extras.outputs.texthook_asset }}`（Textractor `${{ steps.extras.outputs.texthook_tag }}`）
+
+            First-time use note:
+            - Requires WebView2 Runtime
+
+      - name: Make portable zip
+        id: portable
+        shell: pwsh
+        run: |
+          $zip = ./scripts/make-portable.ps1 -Version "${{ steps.meta.outputs.version }}" | Select-Object -Last 1
+          $zip = "$zip".Trim()
+          if (-not (Test-Path $zip)) { throw "portable zip not found: $zip" }
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          Write-Host "portable zip: $zip"
+
+      - name: Collect debug symbols (PDB)
+        id: pdb
+        shell: pwsh
+        run: |
+          $src = "src-tauri/target/release/textractor_tauri.pdb"
+          if (-not (Test-Path $src)) {
+            if (-not $candidate) { throw "PDB not found ($src)" }
+          }
+          New-Item -ItemType Directory -Force -Path dist-symbols | Out-Null
+          $dest = "dist-symbols/textractor-tauri_${{ steps.meta.outputs.version }}_x64.pdb"
+          Copy-Item $src $dest -Force
+          "pdb=$dest" >> $env:GITHUB_OUTPUT
+          Write-Host "debug symbols: $dest ($([math]::Round((Get-Item $dest).Length / 1MB, 2)) MiB, from $src)"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: textractor-tauri-${{ steps.meta.outputs.version }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.sig
+            src-tauri/target/release/bundle/nsis/*.sig
+            ${{ steps.portable.outputs.zip }}
+            ${{ steps.pdb.outputs.pdb }}
+
+      - name: Upload portable zip and debug symbols to release
+        if: steps.meta.outputs.tag != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          ZIP_PATH: ${{ steps.portable.outputs.zip }}
+          PDB_PATH: ${{ steps.pdb.outputs.pdb }}
+        run: gh release upload "$env:RELEASE_TAG" "$env:ZIP_PATH" "$env:PDB_PATH" --clobber

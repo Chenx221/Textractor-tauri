@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "Processus attaché",
     "noProcess": "Aucun processus attaché",
@@ -187,7 +189,9 @@
     "wsClient": "Client WebSocket",
     "wsClientUrl": "URL du serveur"
   },
-  "extraWindow": { "unavailable": "La fenêtre flottante n'est disponible que dans l'application de bureau." },
+  "extraWindow": {
+    "unavailable": "La fenêtre flottante n'est disponible que dans l'application de bureau."
+  },
   "titlebar": {
     "bits64": "64 bits",
     "bits32": "32 bits",
@@ -200,7 +204,34 @@
     "profile": "Compilation",
     "arch": "Architecture",
     "builtAt": "Compilé le",
-    "clickHint": "Cliquez encore {{count}} fois pour ouvrir les outils de développement"
+    "clickHint": "Cliquez encore {{count}} fois pour ouvrir les outils de développement",
+    "update": {
+      "check": "Rechercher des mises à jour",
+      "checking": "Recherche de mises à jour…",
+      "upToDate": "Vous utilisez la dernière version",
+      "available": "La version {{version}} est disponible",
+      "install": "Télécharger et installer",
+      "downloading": "Téléchargement {{percent}} %",
+      "installing": "Installation…",
+      "done": "Installée, redémarrage…",
+      "error": "Échec de la mise à jour : {{error}}",
+      "open": "Détails"
+    },
+    "texthook": {
+      "title": "composant texthook",
+      "currentInstalled": "Mis à jour à l'exécution vers {{version}}",
+      "currentBundled": "Fourni avec l'application ({{version}})",
+      "currentUnknown": "Version inconnue",
+      "check": "Rechercher des mises à jour",
+      "checking": "Recherche…",
+      "upToDate": "Déjà à jour",
+      "available": "Nouveau texthook {{version}} disponible",
+      "update": "Mettre à jour vers {{version}}",
+      "working": "Mise à jour…",
+      "needsAdmin": "Le dossier d'installation n'est pas accessible en écriture : des droits administrateur sont nécessaires",
+      "restartAdmin": "Redémarrer en administrateur",
+      "error": "Échec : {{error}}"
+    }
   },
   "attach": {
     "title": "Attacher au jeu",

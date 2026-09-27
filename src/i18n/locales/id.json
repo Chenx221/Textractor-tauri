@@ -1,5 +1,7 @@
 {
-  "app": { "title": "Textractor-tauri" },
+  "app": {
+    "title": "Textractor-tauri"
+  },
   "sidebar": {
     "process": "Proses terpasang",
     "noProcess": "Tidak ada proses terpasang",
@@ -187,7 +189,9 @@
     "wsClient": "Klien WebSocket",
     "wsClientUrl": "URL server"
   },
-  "extraWindow": { "unavailable": "Jendela mengambang hanya tersedia di aplikasi desktop." },
+  "extraWindow": {
+    "unavailable": "Jendela mengambang hanya tersedia di aplikasi desktop."
+  },
   "titlebar": {
     "bits64": "64-bit",
     "bits32": "32-bit",
@@ -200,7 +204,34 @@
     "profile": "Build",
     "arch": "Arsitektur",
     "builtAt": "Dibangun pada",
-    "clickHint": "Klik {{count}} kali lagi untuk membuka alat pengembang"
+    "clickHint": "Klik {{count}} kali lagi untuk membuka alat pengembang",
+    "update": {
+      "check": "Periksa pembaruan",
+      "checking": "Memeriksa pembaruan…",
+      "upToDate": "Anda sudah menggunakan versi terbaru",
+      "available": "Versi {{version}} tersedia",
+      "install": "Unduh & pasang",
+      "downloading": "Mengunduh {{percent}}%",
+      "installing": "Memasang…",
+      "done": "Terpasang, memulai ulang…",
+      "error": "Pembaruan gagal: {{error}}",
+      "open": "Detail"
+    },
+    "texthook": {
+      "title": "komponen texthook",
+      "currentInstalled": "Diperbarui saat berjalan ke {{version}}",
+      "currentBundled": "Bawaan aplikasi ({{version}})",
+      "currentUnknown": "Versi tidak diketahui",
+      "check": "Periksa pembaruan",
+      "checking": "Memeriksa…",
+      "upToDate": "Sudah yang terbaru",
+      "available": "texthook baru {{version}} tersedia",
+      "update": "Perbarui ke {{version}}",
+      "working": "Memperbarui…",
+      "needsAdmin": "Folder instalasi tidak dapat ditulis — pembaruan butuh hak administrator",
+      "restartAdmin": "Jalankan ulang sebagai admin",
+      "error": "Gagal: {{error}}"
+    }
   },
   "attach": {
     "title": "Tempelkan ke game",

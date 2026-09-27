@@ -206,7 +206,34 @@
     "profile": "Build",
     "arch": "Architecture",
     "builtAt": "Built at",
-    "clickHint": "Click {{count}} more times to open developer tools"
+    "clickHint": "Click {{count}} more times to open developer tools",
+    "update": {
+      "check": "Check for updates",
+      "checking": "Checking for updates…",
+      "upToDate": "You are on the latest version",
+      "available": "Version {{version}} is available",
+      "install": "Download & install",
+      "downloading": "Downloading {{percent}}%",
+      "installing": "Installing…",
+      "done": "Installed, restarting…",
+      "error": "Update failed: {{error}}",
+      "open": "Details"
+    },
+    "texthook": {
+      "title": "texthook component",
+      "currentInstalled": "Updated at runtime to {{version}}",
+      "currentBundled": "Bundled with the app ({{version}})",
+      "currentUnknown": "Version unknown",
+      "check": "Check for updates",
+      "checking": "Checking…",
+      "upToDate": "Already up to date",
+      "available": "New texthook {{version}} available",
+      "update": "Update to {{version}}",
+      "working": "Updating…",
+      "needsAdmin": "The install folder is not writable — updating needs administrator rights",
+      "restartAdmin": "Restart as admin",
+      "error": "Failed: {{error}}"
+    }
   },
   "attach": {
     "title": "Attach to game",
