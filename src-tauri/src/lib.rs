@@ -147,6 +147,14 @@ pub struct RomanjiDictStatus {
     pub outdated: bool,
     /// 已安装但加载失败的原因（格式不匹配/文件损坏等）。
     pub load_error: Option<String>,
+    /// 自定义词典（txt）路径；词典目录未初始化时为 `None`。
+    pub user_dict_path: Option<String>,
+    /// 自定义词典文件是否已存在。
+    pub user_dict_exists: bool,
+    /// 自定义词典中生效的词条数。
+    pub user_dict_entries: usize,
+    /// 自定义词典解析/加载失败的原因。
+    pub user_dict_error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -154,7 +162,10 @@ struct BuildInfo {
     profile: String,
     version: String,
     arch: String,
+    /// 编译时刻（本地时区），形如 `2026-09-30 01:54:03 +08:00`（由 build.rs 注入）。
     built_at: String,
+    /// WebView2 运行时（Chromium 内核）版本；非 Windows 或读取失败时为空串。
+    webview: String,
 }
 
 #[derive(Serialize)]
@@ -276,7 +287,8 @@ fn get_build_info() -> BuildInfo {
         profile: if cfg!(debug_assertions) { "debug".to_string() } else { "release".to_string() },
         version: env!("CARGO_PKG_VERSION").to_string(),
         arch: std::env::consts::ARCH.to_string(),
-        built_at: env!("BUILD_DATE").to_string(),
+        built_at: env!("BUILD_TIME").to_string(),
+        webview: tauri::webview_version().unwrap_or_default(),
     }
 }
 
@@ -375,6 +387,19 @@ fn detach_process(pid: u32) -> Result<(), String> {
     {
         let _ = pid;
         Ok(())
+    }
+}
+
+/// 当前已连接的目标进程 PID 列表（窗口重新加载时同步左上角的进程选框）。
+#[tauri::command]
+fn connected_processes() -> Vec<u32> {
+    #[cfg(target_os = "windows")]
+    {
+        host::connected_pids()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Vec::new()
     }
 }
 
@@ -586,6 +611,33 @@ async fn romanji_dict_uninstall(app: tauri::AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || romanji_dict::uninstall(&app))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// 创建（若不存在）并用默认编辑器打开自定义罗马音词典，返回其路径。
+#[tauri::command]
+fn romanji_user_dict_open() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let path = romanji::ensure_user_dict_file()?;
+        open_with_default(&path)?;
+        Ok(path.to_string_lossy().to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Romanji custom dictionary is only supported on Windows.".to_string())
+    }
+}
+
+/// 重新加载罗马音词典 + 自定义词典（改完自定义词典后点“重载”，无需重启）。
+#[tauri::command]
+async fn romanji_user_dict_reload() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(romanji::reload)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// texthook.dll 的本地状态（当前版本 / 来源 / 目录是否可写）。不联网。
@@ -829,16 +881,108 @@ fn restart_as_admin(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 读取配置文件。
+///
+/// 文件缺失时返回空对象（首次启动）；**文件存在但无法解析时**，先把原文件
+/// 备份成 `settings.json.<日期>.bak`，再返回错误 —— 前端拿到错误后会用默认
+/// 配置继续运行，并在 300ms 防抖后把默认配置写回 `settings.json`（即“重置”），
+/// 所以备份必须发生在这次覆盖写之前。备份采用**改名**而不是复制：重置后
+/// `settings.json` 由前端重新写出，坏文件只留下一份，不会每次启动都堆积。
 #[tauri::command]
 fn load_config(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
-    let content = std::fs::read_to_string(&state.config_path).unwrap_or_else(|_| "{}".to_string());
-    serde_json::from_str(&content).map_err(|e| e.to_string())
+    let content = match std::fs::read_to_string(&state.config_path) {
+        Ok(text) => text,
+        // 文件不存在（或读不了）：按“没有配置”处理，不覆盖、不报错。
+        Err(_) => return Ok(serde_json::Value::Object(serde_json::Map::new())),
+    };
+    match serde_json::from_str::<serde_json::Value>(&content) {
+        // 只有 JSON 对象才是有效配置；其它（数组/数字/null/空文件）同样按损坏处理。
+        Ok(value) if value.is_object() => Ok(value),
+        parsed => {
+            let reason = match parsed {
+                Err(err) => err.to_string(),
+                Ok(_) => "config file is not a JSON object".to_string(),
+            };
+            let backup = backup_corrupt_config(&state.config_path);
+            match backup {
+                Some(path) => Err(format!("{reason} (backed up to {})", path.display())),
+                None => Err(reason),
+            }
+        }
+    }
 }
 
+/// 把损坏的配置文件改名为 `原名.<日期>.bak`，返回备份路径（失败时 `None`）。
+/// 当日已有备份时追加序号（`...-1.bak`、`...-2.bak`），不覆盖旧备份。
+fn backup_corrupt_config(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    if !path.is_file() {
+        return None;
+    }
+    let file_name = path.file_name()?.to_string_lossy().to_string();
+    let dir = path.parent()?;
+    let stamp = local_date();
+    let mut candidate = dir.join(format!("{file_name}.{stamp}.bak"));
+    let mut index = 1;
+    while candidate.exists() {
+        candidate = dir.join(format!("{file_name}.{stamp}-{index}.bak"));
+        index += 1;
+    }
+    std::fs::rename(path, &candidate).ok().map(|()| candidate)
+}
+
+/// 本地日期（`YYYY-MM-DD`）。Windows 用 `GetLocalTime` 取本地时区；
+/// 其它平台没有标准库时区支持，退回 UTC。
+#[cfg(target_os = "windows")]
+fn local_date() -> String {
+    use windows_sys::Win32::Foundation::SYSTEMTIME;
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+
+    let mut now: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe { GetLocalTime(&mut now) };
+    format!("{:04}-{:02}-{:02}", now.wYear, now.wMonth, now.wDay)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn local_date() -> String {
+    // Howard Hinnant 的 civil_from_days：把 Unix 天数换算成公历日期。
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 };
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// 写入配置。
+///
+/// 先写同目录的临时文件再原子替换，避免写入过程中断电/被杀进程留下半截
+/// JSON（下一次启动就会因解析失败而被“重置”，正是丢配置的常见原因）。
+/// 临时文件名带进程号 + 递增序号，两个窗口同时保存也不会互相踩。
 #[tauri::command]
 fn save_config(state: tauri::State<AppState>, config: serde_json::Value) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SAVE_SEQ: AtomicU64 = AtomicU64::new(0);
+
     let content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    std::fs::write(&state.config_path, content).map_err(|e| e.to_string())
+    let seq = SAVE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp = state
+        .config_path
+        .with_extension(format!("json.{}.{seq}.tmp", std::process::id()));
+    std::fs::write(&tmp, content).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &state.config_path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -881,6 +1025,245 @@ fn cache_put(
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ---- 翻译缓存管理（设置 → 翻译缓存） ----
+
+/// 缓存统计：条数、占用空间、按翻译服务的分布。
+#[derive(Serialize)]
+struct CacheStats {
+    entries: i64,
+    bytes: u64,
+    services: Vec<CacheServiceCount>,
+}
+
+#[derive(Serialize)]
+struct CacheServiceCount {
+    service: String,
+    count: i64,
+}
+
+/// 缓存中的一行（id 为 SQLite rowid，用于编辑/删除）。
+#[derive(Serialize)]
+struct CacheRow {
+    id: i64,
+    service: String,
+    source_lang: String,
+    target_lang: String,
+    original_text: String,
+    translated_text: String,
+}
+
+#[derive(Serialize)]
+struct CachePage {
+    rows: Vec<CacheRow>,
+    total: i64,
+}
+
+/// 把搜索词包成 LIKE 模式（转义 `%` `_` `\`，配合 SQL 里的 `ESCAPE '\'`）。
+fn like_pattern(query: &str) -> String {
+    let mut pattern = String::with_capacity(query.len() + 2);
+    pattern.push('%');
+    for ch in query.chars() {
+        if matches!(ch, '%' | '_' | '\\') {
+            pattern.push('\\');
+        }
+        pattern.push(ch);
+    }
+    pattern.push('%');
+    pattern
+}
+
+/// 缓存查询的 WHERE 子句：`?1` 搜索词、`?2` LIKE 模式、`?3` 翻译服务（各为空串时不过滤）。
+const CACHE_FILTER: &str = "(?1 = '' OR original_text LIKE ?2 ESCAPE '\\' \
+                            OR translated_text LIKE ?2 ESCAPE '\\') \
+                            AND (?3 = '' OR service = ?3)";
+
+#[tauri::command]
+fn cache_stats(state: tauri::State<AppState>) -> Result<CacheStats, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let entries: i64 = db
+        .query_row("SELECT COUNT(*) FROM translation_cache", [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    let mut stmt = db
+        .prepare(
+            "SELECT service, COUNT(*) FROM translation_cache \
+             GROUP BY service ORDER BY COUNT(*) DESC, service ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let services = stmt
+        .query_map([], |row| {
+            Ok(CacheServiceCount {
+                service: row.get(0)?,
+                count: row.get(1)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    // 库文件大小（含未回收的空闲页）；读不到就报 0。
+    let path = state
+        .config_path
+        .parent()
+        .map(|dir| dir.join("translation_cache.db"))
+        .unwrap_or_else(|| std::path::PathBuf::from("translation_cache.db"));
+    let bytes = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+    Ok(CacheStats {
+        entries,
+        bytes,
+        services,
+    })
+}
+
+/// 分页查缓存（按最近写入排序）：`filter` 匹配原文/译文，`service` 过滤翻译服务。
+fn query_cache_page(
+    conn: &rusqlite::Connection,
+    filter: &str,
+    service: &str,
+    offset: u32,
+    limit: u32,
+) -> Result<CachePage, String> {
+    let like = like_pattern(filter);
+    let limit = limit.clamp(1, 200);
+
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT rowid, service, source_lang, target_lang, original_text, translated_text \
+             FROM translation_cache WHERE {CACHE_FILTER} \
+             ORDER BY rowid DESC LIMIT ?4 OFFSET ?5"
+        ))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![filter, like, service, limit, offset],
+            |row| {
+                Ok(CacheRow {
+                    id: row.get(0)?,
+                    service: row.get(1)?,
+                    source_lang: row.get(2)?,
+                    target_lang: row.get(3)?,
+                    original_text: row.get(4)?,
+                    translated_text: row.get(5)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let total: i64 = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM translation_cache WHERE {CACHE_FILTER}"),
+            rusqlite::params![filter, like, service],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(CachePage { rows, total })
+}
+
+/// 删除匹配的缓存行（两个过滤都为空串时删除全部），返回删除行数。
+fn delete_cache_matching(
+    conn: &rusqlite::Connection,
+    filter: &str,
+    service: &str,
+) -> Result<usize, String> {
+    let like = like_pattern(filter);
+    conn.execute(
+        &format!("DELETE FROM translation_cache WHERE {CACHE_FILTER}"),
+        rusqlite::params![filter, like, service],
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// 分页列出缓存（按最近写入排序）：`query` 匹配原文/译文，`service` 过滤翻译服务。
+#[tauri::command]
+fn cache_list(
+    state: tauri::State<AppState>,
+    query: Option<String>,
+    service: Option<String>,
+    offset: u32,
+    limit: u32,
+) -> Result<CachePage, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    query_cache_page(
+        &db,
+        query.unwrap_or_default().trim(),
+        service.unwrap_or_default().trim(),
+        offset,
+        limit,
+    )
+}
+
+/// 新增一条缓存（已存在同键条目则覆盖）。
+#[tauri::command]
+fn cache_insert(
+    state: tauri::State<AppState>,
+    service: String,
+    source: String,
+    target: String,
+    original: String,
+    translated: String,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT OR REPLACE INTO translation_cache \
+         (service, source_lang, target_lang, original_text, translated_text) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![service, source, target, original, translated],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 修改一条缓存的译文（原文/语言属于主键，不在此处改）。
+#[tauri::command]
+fn cache_update(state: tauri::State<AppState>, id: i64, translated: String) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE translation_cache SET translated_text = ?2 WHERE rowid = ?1",
+        rusqlite::params![id, translated],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 删除若干条缓存，返回实际删除的行数。
+#[tauri::command]
+fn cache_delete(state: tauri::State<AppState>, ids: Vec<i64>) -> Result<usize, String> {
+    let mut db = state.db.lock().map_err(|e| e.to_string())?;
+    let tx = db.transaction().map_err(|e| e.to_string())?;
+    let mut removed = 0usize;
+    {
+        let mut stmt = tx
+            .prepare("DELETE FROM translation_cache WHERE rowid = ?1")
+            .map_err(|e| e.to_string())?;
+        for id in ids {
+            removed += stmt
+                .execute(rusqlite::params![id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(removed)
+}
+
+/// 清空缓存：两个过滤都为空时清空全部（并 VACUUM 回收空间），否则只删匹配项。
+#[tauri::command]
+fn cache_clear(
+    state: tauri::State<AppState>,
+    query: Option<String>,
+    service: Option<String>,
+) -> Result<usize, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let filter = query.unwrap_or_default().trim().to_string();
+    let service = service.unwrap_or_default().trim().to_string();
+    let removed = delete_cache_matching(&db, &filter, &service)?;
+    if filter.is_empty() && service.is_empty() {
+        // VACUUM 不能在事务里执行（这里没有事务），用于把清空后的空间还给系统。
+        let _ = db.execute_batch("VACUUM");
+    }
+    Ok(removed)
 }
 
 #[cfg(target_os = "windows")]
@@ -1088,9 +1471,16 @@ pub fn run() {
             save_config,
             cache_get,
             cache_put,
+            cache_stats,
+            cache_list,
+            cache_insert,
+            cache_update,
+            cache_delete,
+            cache_clear,
             host_start,
             inject_process,
             detach_process,
+            connected_processes,
             remove_hook,
             insert_hook,
             find_hooks,
@@ -1109,6 +1499,8 @@ pub fn run() {
             romanji_dict_status,
             romanji_dict_install,
             romanji_dict_uninstall,
+            romanji_user_dict_open,
+            romanji_user_dict_reload,
             texthook_status,
             texthook_check,
             texthook_update,
@@ -1142,6 +1534,8 @@ pub fn run() {
 
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
+    use super::{backup_corrupt_config, local_date};
+
     /// `sysinfo` 升级后的运行时冒烟测试：确认仍能枚举到进程及其名称
     /// （避免"编译通过但列表为空/字段丢失"这类行为变化）。
     #[test]
@@ -1161,5 +1555,142 @@ mod tests {
             processes.values().any(|p| p.exe().is_some()),
             "no process exposes an executable path"
         );
+    }
+
+    /// 损坏的配置文件应被改名成 `原名.<日期>.bak`（而不是直接丢掉），
+    /// 且同一天的第二次备份不会覆盖第一次。
+    #[test]
+    fn backup_corrupt_config_keeps_a_dated_copy() {
+        let dir = std::env::temp_dir().join(format!(
+            "textractor-config-backup-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+
+        std::fs::write(&path, "{ not json").unwrap();
+        let first = backup_corrupt_config(&path).expect("backup should be created");
+        assert!(!path.exists(), "the original file should be moved away");
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "{ not json");
+        assert_eq!(
+            first.file_name().unwrap().to_string_lossy(),
+            format!("settings.json.{}.bak", local_date())
+        );
+
+        std::fs::write(&path, "still not json").unwrap();
+        let second = backup_corrupt_config(&path).expect("second backup should be created");
+        assert_ne!(first, second, "the earlier backup must not be overwritten");
+        assert_eq!(std::fs::read_to_string(&second).unwrap(), "still not json");
+
+        // 文件不存在时不应产生备份（首次启动不是“重置”）。
+        let _ = std::fs::remove_file(&path);
+        assert!(backup_corrupt_config(&path).is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    /// 建一个与运行时同结构的空缓存库（内存库，不碰真实文件）。
+    fn empty_cache() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE translation_cache (
+                service TEXT NOT NULL,
+                source_lang TEXT NOT NULL,
+                target_lang TEXT NOT NULL,
+                original_text TEXT NOT NULL,
+                translated_text TEXT NOT NULL,
+                PRIMARY KEY (service, source_lang, target_lang, original_text)
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert(conn: &rusqlite::Connection, service: &str, original: &str, translated: &str) {
+        conn.execute(
+            "INSERT OR REPLACE INTO translation_cache \
+             (service, source_lang, target_lang, original_text, translated_text) \
+             VALUES (?1, 'ja', 'zh-CN', ?2, ?3)",
+            rusqlite::params![service, original, translated],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn lists_filters_and_pages() {
+        let conn = empty_cache();
+        insert(&conn, "google", "こんにちは", "你好");
+        insert(&conn, "deepl", "ありがとう", "谢谢");
+        insert(&conn, "google", "100% 完了", "100% 完成");
+
+        // 无过滤：全部返回，最近写入的排在最前。
+        let page = query_cache_page(&conn, "", "", 0, 10).unwrap();
+        assert_eq!(page.total, 3);
+        assert_eq!(page.rows[0].original_text, "100% 完了");
+
+        // 命中原文 / 译文。
+        assert_eq!(
+            query_cache_page(&conn, "ありがとう", "", 0, 10).unwrap().total,
+            1
+        );
+        let hit = query_cache_page(&conn, "谢谢", "", 0, 10).unwrap();
+        assert_eq!(hit.total, 1);
+        assert_eq!(hit.rows[0].service, "deepl");
+
+        // `%` 按普通字符处理，而不是 LIKE 通配符。
+        let pct = query_cache_page(&conn, "%", "", 0, 10).unwrap();
+        assert_eq!(pct.total, 1);
+        assert_eq!(pct.rows[0].original_text, "100% 完了");
+
+        // 分页。
+        assert_eq!(query_cache_page(&conn, "", "", 0, 2).unwrap().rows.len(), 2);
+        assert_eq!(query_cache_page(&conn, "", "", 2, 2).unwrap().rows.len(), 1);
+        assert_eq!(query_cache_page(&conn, "", "", 99, 2).unwrap().rows.len(), 0);
+    }
+
+    #[test]
+    fn filters_by_service() {
+        let conn = empty_cache();
+        insert(&conn, "google", "a", "A-1");
+        insert(&conn, "deepl", "b", "B-1");
+        insert(&conn, "deepl", "c", "C-1");
+
+        let by_service = query_cache_page(&conn, "", "deepl", 0, 10).unwrap();
+        assert_eq!(by_service.total, 2);
+        assert!(by_service.rows.iter().all(|row| row.service == "deepl"));
+
+        // 服务 + 文本搜索叠加。
+        let combined = query_cache_page(&conn, "c", "deepl", 0, 10).unwrap();
+        assert_eq!(combined.total, 1);
+        assert_eq!(combined.rows[0].original_text, "c");
+        assert_eq!(query_cache_page(&conn, "a", "deepl", 0, 10).unwrap().total, 0);
+
+        // 按服务删除只删该服务的条目。
+        assert_eq!(delete_cache_matching(&conn, "", "deepl").unwrap(), 2);
+        let rest = query_cache_page(&conn, "", "", 0, 10).unwrap();
+        assert_eq!(rest.total, 1);
+        assert_eq!(rest.rows[0].service, "google");
+    }
+
+    #[test]
+    fn deletes_matching_rows_or_everything() {
+        let conn = empty_cache();
+        insert(&conn, "google", "a", "A-1");
+        insert(&conn, "deepl", "b", "B-1");
+        insert(&conn, "deepl", "c", "C-1");
+
+        // 过滤的是原文/译文，不是服务名。
+        assert_eq!(delete_cache_matching(&conn, "deepl", "").unwrap(), 0);
+        assert_eq!(delete_cache_matching(&conn, "B-1", "").unwrap(), 1);
+        assert_eq!(query_cache_page(&conn, "", "", 0, 10).unwrap().total, 2);
+        // 空过滤 = 清空全部。
+        assert_eq!(delete_cache_matching(&conn, "", "").unwrap(), 2);
+        assert_eq!(query_cache_page(&conn, "", "", 0, 10).unwrap().total, 0);
     }
 }

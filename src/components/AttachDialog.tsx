@@ -22,6 +22,7 @@ import {
   TableRow,
   TableSortLabel,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -34,12 +35,14 @@ interface AttachDialogProps {
   open: boolean;
   onClose: () => void;
   onAttach: (process: ProcessInfo) => void;
+  /** 已经附加的 PID（列表里用圆点标出，避免重复附加同一进程）。 */
+  attachedPids: number[];
 }
 
 type SortKey = "name" | "title" | "arch" | "pid";
 type SortDir = "asc" | "desc";
 
-export function AttachDialog({ open, onClose, onAttach }: AttachDialogProps) {
+export function AttachDialog({ open, onClose, onAttach, attachedPids }: AttachDialogProps) {
   const { t } = useTranslation();
   const { config } = useConfig();
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
@@ -236,6 +239,20 @@ export function AttachDialog({ open, onClose, onAttach }: AttachDialogProps) {
                         />
                       ) : null}
                       <Box component="span">{p.name}</Box>
+                      {/* 已附加的目标：点它会直接从左上角选框切过去，不会重复注入。 */}
+                      {attachedPids.includes(p.pid) && (
+                        <Tooltip title={t("attach.attachedTo", { name: p.name, pid: p.pid })}>
+                          <Box
+                            sx={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              bgcolor: "success.main",
+                              flexShrink: 0,
+                            }}
+                          />
+                        </Tooltip>
+                      )}
                     </Box>
                   </TableCell>
                   <TableCell>{p.title || "—"}</TableCell>

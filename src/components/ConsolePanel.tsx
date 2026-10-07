@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Box, Divider, Menu, MenuItem, Paper, Select } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -9,6 +9,15 @@ import { useConfig } from "../settings/ConfigContext";
 
 function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
+}
+
+/**
+ * hook 线程 id 形如 `pid:addr:ctx:ctx2`；返回其所属进程 PID。
+ * 控制台/剪贴板/ws 这类全局线程返回 null。
+ */
+function threadOwnerPid(threadId: string): number | null {
+  const pid = Number(threadId.split(":", 1)[0]);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
 }
 
 interface ContextMenuState {
@@ -26,6 +35,7 @@ export function ConsolePanel() {
     hookThreads,
     selectedThread,
     setSelectedThread,
+    targetPid,
     clearConsole,
     clearText,
     deleteBlock,
@@ -99,20 +109,55 @@ export function ConsolePanel() {
     [blocks],
   );
 
+  // 只列出“当前目标进程”的文本线程：切换左上角目标后，其它进程的线程不会
+  // 残留在下拉框里，也就不会误选到别的进程上（多开同名进程时最容易混淆）。
+  const targetThreads = useMemo(
+    () => hookThreads.filter((thread) => thread.pid === targetPid),
+    [hookThreads, targetPid],
+  );
+
+  // 切换目标时同步切换正在查看的线程：记住各进程上次查看的线程，
+  // 回到该进程时恢复；若当前停留在别的进程的线程上，则切到该进程（没有则控制台）。
+  // 用 layout effect：在浏览器绘制前完成切换，避免下拉框短暂显示不属于本目标的线程。
+  const selectedThreadRef = useRef(selectedThread);
+  selectedThreadRef.current = selectedThread;
+  const lastThreadByPidRef = useRef(new Map<number, string>());
+  const prevTargetPidRef = useRef<number | null | undefined>(undefined);
+  useLayoutEffect(() => {
+    const prev = prevTargetPidRef.current;
+    prevTargetPidRef.current = targetPid;
+    if (prev === targetPid) return;
+    const sel = selectedThreadRef.current;
+    const owner = threadOwnerPid(sel);
+    if (owner === null) return;
+    // 记下这个线程的查看位置（下次切回它的进程时恢复）。
+    lastThreadByPidRef.current.set(owner, sel);
+    if (owner === targetPid) return;
+    const remembered = targetPid !== null ? lastThreadByPidRef.current.get(targetPid) : undefined;
+    setSelectedThread(
+      remembered !== undefined && hookThreads.some((t) => t.id === remembered)
+        ? remembered
+        : "console",
+    );
+  }, [targetPid, hookThreads, setSelectedThread]);
+
   const threadOptions = [
     "console",
     "clipboard",
     ...(wsClientEnabled ? ["ws-client"] : []),
-    ...hookThreads.map((t) => t.id),
+    ...targetThreads.map((t) => t.id),
   ];
 
+  // 滚轮切换线程：到两端就停住，不做循环（循环时稍一多滚就会从最后一个
+  // 跳回第一个，容易误选）。列表不足两项时不拦截滚轮。
   const handleThreadWheel = (event: React.WheelEvent<HTMLElement>) => {
     if (threadOptions.length < 2) return;
     const idx = threadOptions.indexOf(selectedThread);
-    const dir = event.deltaY > 0 ? 1 : -1;
-    const next = threadOptions[(idx + dir + threadOptions.length) % threadOptions.length];
-    setSelectedThread(next);
+    if (idx < 0) return;
     event.preventDefault();
+    const next = idx + (event.deltaY > 0 ? 1 : -1);
+    if (next < 0 || next >= threadOptions.length) return;
+    setSelectedThread(threadOptions[next]);
   };
 
   return (
@@ -130,7 +175,7 @@ export function ConsolePanel() {
         <MenuItem value="console">{t("content.console")}</MenuItem>
         <MenuItem value="clipboard">{t("content.clipboard")}</MenuItem>
         {wsClientEnabled && <MenuItem value="ws-client">{t("content.wsClient")}</MenuItem>}
-        {hookThreads.map((thread) => {
+        {targetThreads.map((thread) => {
           const hex = (n: number) => n.toString(16).toUpperCase();
           const label =
             `${hex(thread.handle)}:${hex(thread.pid)}:${hex(thread.addr)}:${hex(thread.ctx)}:${hex(thread.ctx2)}: ` +

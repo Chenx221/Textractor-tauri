@@ -4,7 +4,6 @@ import CloseIcon from "@mui/icons-material/Close";
 import { useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/Sidebar";
 import { ConsolePanel } from "./components/ConsolePanel";
@@ -36,8 +35,17 @@ function isTauri(): boolean {
 export default function App() {
   const { t, i18n } = useTranslation();
   const theme = useTheme();
-  const { attach, detach, saveHooks, insertHook, removeHook, findHooks, clearSearchResults } =
-    useHost();
+  const {
+    attach,
+    detach,
+    saveHooks,
+    insertHook,
+    removeHook,
+    findHooks,
+    targets,
+    targetPid,
+    setTargetPid,
+  } = useHost();
   const { config } = useConfig();
   const mainBgImage = useImageDataUri(config.window.backgroundImage);
   const [collapsed, setCollapsed] = useState(false);
@@ -51,7 +59,6 @@ export default function App() {
   const [searchHooksOpen, setSearchHooksOpen] = useState(false);
   const [searchResultsOpen, setSearchResultsOpen] = useState(false);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
-  const [attachedProcess, setAttachedProcess] = useState<ProcessInfo | null>(null);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   /** 启动时后台检查到的新版本（应用本体优先，其次 texthook 组件；非空则弹提示）。 */
   const [updateNotice, setUpdateNotice] = useState<{ kind: "app" | "texthook"; version: string } | null>(
@@ -91,46 +98,8 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // 进程断开（detach 或目标进程退出）时清除对应的 attach 状态。
-  useEffect(() => {
-    if (!isTauri()) return;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void listen<number>("host-disconnected", (event) => {
-      if (disposed) return;
-      setAttachedProcess((prev) => (prev && prev.pid === event.payload ? null : prev));
-    }).then((fn) => {
-      if (disposed) fn();
-      else unlisten = fn;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
-
-  // 进程连接（含启动时 auto_attach）时同步 UI 的 attach 状态。
-  useEffect(() => {
-    if (!isTauri()) return;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void listen<number>("host-connected", (event) => {
-      if (disposed) return;
-      void invoke<ProcessInfo[]>("list_processes")
-        .then((list) => {
-          const process = list.find((p) => p.pid === event.payload);
-          if (process) setAttachedProcess(process);
-        })
-        .catch(() => {});
-    }).then((fn) => {
-      if (disposed) fn();
-      else unlisten = fn;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  // 目标进程列表与“当前目标”统一由 HostProvider 维护（多目标附加、断开后
+  // 自动切到剩余目标、窗口重载后的同步都在那里），App 只负责按当前目标派发操作。
 
   useEffect(() => {
     if (!isTauri() || !systemInfo) return;
@@ -210,44 +179,44 @@ export default function App() {
   };
 
   const handleAttach = (process: ProcessInfo) => {
-    setAttachedProcess(process);
     setAttachOpen(false);
+    // 附加成功的进程会由 HostProvider 登记为目标并自动设为当前目标。
     attach(process.pid);
     setSnackbarMessage(t("attach.attachedTo", { name: process.name, pid: process.pid }));
   };
 
   const handleDetach = () => {
-    if (attachedProcess) detach(attachedProcess.pid);
+    if (targetPid !== null) detach(targetPid);
   };
 
   const handleSaveHooks = () => {
-    if (attachedProcess) saveHooks(attachedProcess.pid);
+    if (targetPid !== null) saveHooks(targetPid);
   };
 
   const handleConfigure = () => {
-    if (!attachedProcess) return;
-    void invoke("configure_game", { pid: attachedProcess.pid }).catch(() => {});
+    if (targetPid === null) return;
+    void invoke("configure_game", { pid: targetPid }).catch(() => {});
   };
 
   const handleForget = () => {
-    if (!attachedProcess) return;
-    void invoke("forget_game", { pid: attachedProcess.pid }).catch(() => {});
-    setAttachedProcess(null);
-    setSnackbarMessage(t("attach.forgot", { name: attachedProcess.name }));
+    if (targetPid === null) return;
+    const name = targets.find((p) => p.pid === targetPid)?.name ?? `PID ${targetPid}`;
+    // forget_game 会同时 detach，目标列表由断连事件自动更新。
+    void invoke("forget_game", { pid: targetPid }).catch(() => {});
+    setSnackbarMessage(t("attach.forgot", { name }));
   };
 
   const handleAddHook = (code: string) => {
-    if (attachedProcess) insertHook(attachedProcess.pid, code);
+    if (targetPid !== null) insertHook(targetPid, code);
   };
 
   const handleRemoveHook = (address: number) => {
-    if (attachedProcess) removeHook(attachedProcess.pid, address);
+    if (targetPid !== null) removeHook(targetPid, address);
   };
 
   const handleSearchHooksSubmit = (param: SearchParam) => {
-    if (!attachedProcess) return;
-    clearSearchResults();
-    findHooks(attachedProcess.pid, param);
+    if (targetPid === null) return;
+    findHooks(targetPid, param);
     setSearchResultsOpen(true);
   };
 
@@ -302,7 +271,9 @@ export default function App() {
         onToggleExtraWindow={handleToggleExtraWindow}
         onRestartAsAdmin={handleRestartAsAdmin}
         isAdmin={systemInfo?.is_admin ?? null}
-        attachedProcess={attachedProcess}
+        targets={targets}
+        targetPid={targetPid}
+        onSelectTarget={setTargetPid}
       />
       <Box component="main" sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <ConsolePanel />
@@ -315,6 +286,7 @@ export default function App() {
         open={attachOpen}
         onClose={() => setAttachOpen(false)}
         onAttach={handleAttach}
+        attachedPids={targets.map((process) => process.pid)}
       />
       <LaunchDialog
         open={launchOpen}
@@ -328,7 +300,7 @@ export default function App() {
       />
       <RemoveHookDialog
         open={removeHookOpen}
-        pid={attachedProcess?.pid ?? null}
+        pid={targetPid}
         onClose={() => setRemoveHookOpen(false)}
         onRemove={handleRemoveHook}
       />
@@ -339,7 +311,7 @@ export default function App() {
       />
       <SearchResultsDialog
         open={searchResultsOpen}
-        pid={attachedProcess?.pid ?? null}
+        pid={targetPid}
         onClose={() => setSearchResultsOpen(false)}
       />
       <Snackbar

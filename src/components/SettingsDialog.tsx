@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   Box,
   Button,
@@ -21,11 +21,14 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { LANGUAGES } from "../i18n";
 import { useThemeMode } from "../ThemeModeProvider";
 import { useConfig } from "../settings/ConfigContext";
 import { useDisplaySettings } from "../settings/DisplaySettingsContext";
 import { FontSettingsEditor } from "./FontSettingsEditor";
+import { TranslationCacheDialog } from "./TranslationCacheDialog";
+import { formatBytes } from "../utils/format";
 import type { ThemeMode } from "../theme";
 import type { FontSettings } from "../types/display";
 import type { BackdropEffect } from "../types/extraWindow";
@@ -33,6 +36,11 @@ import type { BackdropEffect } from "../types/extraWindow";
 interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
+}
+
+interface CacheOverview {
+  entries: number;
+  bytes: number;
 }
 
 const THEME_OPTIONS: { value: ThemeMode; labelKey: string }[] = [
@@ -94,6 +102,21 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   } = useDisplaySettings();
 
   const extra = config.extraWindow;
+
+  // 翻译缓存概览：打开设置时读一次，关掉缓存管理后再刷新一次。
+  const [cacheStats, setCacheStats] = useState<CacheOverview | null>(null);
+  const [cacheOpen, setCacheOpen] = useState(false);
+
+  const loadCacheStats = useCallback(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    void invoke<CacheOverview>("cache_stats")
+      .then((stats) => setCacheStats({ entries: stats.entries, bytes: stats.bytes }))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (open) loadCacheStats();
+  }, [open, loadCacheStats]);
 
   const updateExtraSource = (patch: Partial<FontSettings>) => {
     const source = { ...extra.source, ...patch };
@@ -562,10 +585,31 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           </Typography>
           {renderAppearance(extra, (patch) => setExtraWindow({ ...extra, ...patch }), "extraWindow")}
         </Section>
+
+        <Section titleKey="cache.title">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {t("cache.summary", {
+              n: cacheStats?.entries ?? 0,
+              size: formatBytes(cacheStats?.bytes ?? 0),
+            })}
+          </Typography>
+          <Button size="small" variant="outlined" onClick={() => setCacheOpen(true)}>
+            {t("cache.manage")}
+          </Button>
+        </Section>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t("settings.close")}</Button>
       </DialogActions>
+
+      {/* 缓存管理：统计/搜索/新增/编辑/删除/重置（嵌套对话框，关闭时刷新概览）。 */}
+      <TranslationCacheDialog
+        open={cacheOpen}
+        onClose={() => {
+          setCacheOpen(false);
+          loadCacheStats();
+        }}
+      />
     </Dialog>
   );
 }

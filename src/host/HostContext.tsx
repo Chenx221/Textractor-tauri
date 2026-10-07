@@ -13,6 +13,7 @@ import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useConfig } from "../settings/ConfigContext";
 import { useExtensions } from "../extensions/ExtensionsContext";
 import type { TranslationExtension } from "../types/extensions";
+import type { ProcessInfo } from "../types/process";
 import type {
   ExtraWindowHistoryRequest,
   ExtraWindowText,
@@ -80,6 +81,19 @@ interface HookThread {
 // 每个线程最多保留的文本块数量，超出后丢弃最旧的，避免长时间运行时 DOM 无限增长。
 const MAX_BLOCKS_PER_THREAD = 2000;
 
+/** 进程信息缺失时的兜底对象，保证目标选框里至少有一项可切。 */
+function fallbackProcessInfo(pid: number): ProcessInfo {
+  return {
+    pid,
+    name: `PID ${pid}`,
+    title: "",
+    arch: "",
+    has_file: false,
+    is_system: false,
+    icon: null,
+  };
+}
+
 /** 把文本块转换为转发给悬浮窗的载荷。 */
 function toExtraWindowText(block: TextBlock, fallbackThreadId: string): ExtraWindowText {
   return {
@@ -94,6 +108,15 @@ function toExtraWindowText(block: TextBlock, fallbackThreadId: string): ExtraWin
 interface HostContextValue {
   /** 当前已建立管道连接的目标进程 PID 列表。 */
   connectedPids: number[];
+  /**
+   * 已附加的目标进程（可多个）。UI 里的“当前目标”只是其中一个，
+   * 切换目标不会断开其它进程，但文本线程/hook 列表都只按当前目标展示。
+   */
+  targets: ProcessInfo[];
+  /** 当前操作目标 PID（左上角进程选框的值，null = 未附加）。 */
+  targetPid: number | null;
+  /** 切换当前操作目标。 */
+  setTargetPid: (pid: number) => void;
   /** 已出现的 hook 线程（用于线程下拉框）。 */
   hookThreads: HookThread[];
   consoleLines: string[];
@@ -115,6 +138,8 @@ interface HostContextValue {
   retryBlock: (id: string, provider: string) => void;
   /** 对已完成的译文重新翻译（绕过缓存）。 */
   retranslateBlock: (id: string, provider: string) => void;
+  /** 重新计算所有历史块的罗马音（重载自定义词典后调用）。 */
+  reromanizeAll: () => Promise<void>;
   attach: (pid: number) => void;
   detach: (pid: number) => void;
   insertHook: (pid: number, code: string) => void;
@@ -145,6 +170,8 @@ export function HostProvider({ children }: { children: ReactNode }) {
     romanizeJa,
   } = useExtensions();
   const [connectedPids, setConnectedPids] = useState<number[]>([]);
+  const [targets, setTargets] = useState<ProcessInfo[]>([]);
+  const [targetPid, setTargetPidState] = useState<number | null>(null);
   const [hookThreads, setHookThreads] = useState<HookThread[]>([]);
   const [consoleLines, setConsoleLines] = useState<string[]>([]);
   const [searchResults, setSearchResults] = useState<HookFound[]>([]);
@@ -175,6 +202,11 @@ export function HostProvider({ children }: { children: ReactNode }) {
   pausedRef.current = paused;
   const romanizeRef = useRef(romanizeJa);
   romanizeRef.current = romanizeJa;
+  const targetsRef = useRef(targets);
+  targetsRef.current = targets;
+  // 手动附加后待选中的 PID：连接事件到达时把它设为当前目标
+  // （自动附加的进程只在还没有目标时才接管，避免抢走用户正在看的目标）。
+  const selectOnConnectRef = useRef<number | null>(null);
 
   // 单个块内容变化时通知悬浮窗：它本地缓冲/当前显示里若含这条就同步刷新。
   // 否则用户在历史文本上手动翻译时，悬浮窗里那条会一直停留在旧内容。
@@ -338,29 +370,80 @@ export function HostProvider({ children }: { children: ReactNode }) {
     void invoke("host_start").catch(() => {});
     // 启动时自动 attach 已保存的游戏（gap 7）。
     void invoke("auto_attach").catch(() => {});
+    // 窗口重新加载（开发热更新 / 刷新）时后端可能已经连着进程，
+    // 但不会有 host-connected 补发，所以主动同步一次目标列表。
+    void invoke<number[]>("connected_processes")
+      .then((pids) => {
+        if (!pids || pids.length === 0) return;
+        void invoke<ProcessInfo[]>("list_processes")
+          .then((list) => {
+            const infos = pids.map(
+              (pid) => list.find((p) => p.pid === pid) ?? fallbackProcessInfo(pid),
+            );
+            setTargets((prev) => {
+              const merged = [...prev];
+              for (const info of infos) {
+                if (!merged.some((t) => t.pid === info.pid)) merged.push(info);
+              }
+              return merged;
+            });
+            setTargetPidState((prev) => prev ?? infos[0].pid);
+          })
+          .catch(() => {});
+      })
+      .catch(() => {});
 
     const unlisteners: Promise<UnlistenFn>[] = [];
 
     unlisteners.push(
       listen<number>("host-connected", (event) => {
+        const pid = event.payload;
         setConnectedPids((prev) =>
-          prev.includes(event.payload) ? prev : [...prev, event.payload],
+          prev.includes(pid) ? prev : [...prev, pid],
         );
-        setConsoleLines((prev) => [...prev, `Connected to process ${event.payload}`]);
+        setConsoleLines((prev) => [...prev, `Connected to process ${pid}`]);
+        // 登记为目标进程，并决定是否把它切为当前目标：
+        // 手动附加的总是接管；自动附加只在还没有目标时接管。
+        void invoke<ProcessInfo[]>("list_processes")
+          .then((list) => {
+            const info = list.find((p) => p.pid === pid) ?? fallbackProcessInfo(pid);
+            setTargets((prev) => (prev.some((t) => t.pid === pid) ? prev : [...prev, info]));
+            setTargetPidState((prev) =>
+              prev === null || selectOnConnectRef.current === pid ? pid : prev,
+            );
+          })
+          .catch(() => {
+            setTargets((prev) =>
+              prev.some((t) => t.pid === pid) ? prev : [...prev, fallbackProcessInfo(pid)],
+            );
+            setTargetPidState((prev) =>
+              prev === null || selectOnConnectRef.current === pid ? pid : prev,
+            );
+          })
+          .finally(() => {
+            if (selectOnConnectRef.current === pid) selectOnConnectRef.current = null;
+          });
       }),
     );
     unlisteners.push(
       listen<number>("host-disconnected", (event) => {
-        setConnectedPids((prev) => prev.filter((pid) => pid !== event.payload));
-        setHookThreads((prev) => prev.filter((t) => t.pid !== event.payload));
+        const pid = event.payload;
+        setConnectedPids((prev) => prev.filter((p) => p !== pid));
+        setHookThreads((prev) => prev.filter((t) => t.pid !== pid));
+        // 目标进程被分离：从目标列表移除；若它正是当前目标，
+        // 切到剩下的第一个（没有则置空），避免选框停在一个已失效的进程上。
+        setTargets((prev) => prev.filter((t) => t.pid !== pid));
+        setTargetPidState((prev) =>
+          prev === pid ? (targetsRef.current.find((t) => t.pid !== pid)?.pid ?? null) : prev,
+        );
         // 当前选中的若是被分离进程的线程，切回控制台，避免下方残留旧线程内容。
         const sel = selectedThreadRef.current;
         if (sel !== "console" && sel !== "clipboard") {
-          if (sel.split(":")[0] === String(event.payload)) {
+          if (sel.split(":")[0] === String(pid)) {
             setSelectedThread("console");
           }
         }
-        setConsoleLines((prev) => [...prev, `Process ${event.payload} disconnected`]);
+        setConsoleLines((prev) => [...prev, `Process ${pid} disconnected`]);
       }),
     );
     unlisteners.push(
@@ -508,8 +591,16 @@ export function HostProvider({ children }: { children: ReactNode }) {
   }, [config.websocket.clientEnabled, selectedThread]);
 
   const attach = useCallback((pid: number) => {
+    // 已经附加过了（后端也会忽略重复注入，不再发 host-connected）：直接切过去。
+    if (targetsRef.current.some((t) => t.pid === pid)) {
+      setTargetPidState(pid);
+      return;
+    }
+    selectOnConnectRef.current = pid;
     if (isTauri()) void invoke("inject_process", { pid }).catch(() => {});
   }, []);
+
+  const setTargetPid = useCallback((pid: number) => setTargetPidState(pid), []);
 
   const detach = useCallback((pid: number) => {
     if (isTauri()) void invoke("detach_process", { pid }).catch(() => {});
@@ -562,9 +653,28 @@ export function HostProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /**
+   * 重算所有历史块的罗马音。自定义词典重载后调用，让已经显示过的行也用上
+   * 新词条（否则要等新文本到达才会生效）。只处理已经有罗马音的块，
+   * 计算结果为空时保留原值（词典未安装 / 工具刚被关闭）。
+   */
+  const reromanizeAll = useCallback(async () => {
+    const pending = blocksRef.current.filter(
+      (block) => block.romanji !== undefined && block.original.trim() !== "",
+    );
+    for (const block of pending) {
+      const romanji = await romanizeRef.current(block.original);
+      if (!romanji) continue;
+      patchBlock(block.id, (current) => ({ ...current, romanji }));
+    }
+  }, [patchBlock]);
+
   const value = useMemo<HostContextValue>(
     () => ({
       connectedPids,
+      targets,
+      targetPid,
+      setTargetPid,
       hookThreads,
       consoleLines,
       searchResults,
@@ -576,6 +686,7 @@ export function HostProvider({ children }: { children: ReactNode }) {
       translateBlock,
       retryBlock,
       retranslateBlock,
+      reromanizeAll,
       attach,
       detach,
       insertHook,
@@ -589,6 +700,9 @@ export function HostProvider({ children }: { children: ReactNode }) {
     }),
     [
       connectedPids,
+      targets,
+      targetPid,
+      setTargetPid,
       hookThreads,
       consoleLines,
       searchResults,
@@ -599,6 +713,7 @@ export function HostProvider({ children }: { children: ReactNode }) {
       translateBlock,
       retryBlock,
       retranslateBlock,
+      reromanizeAll,
       attach,
       detach,
       insertHook,

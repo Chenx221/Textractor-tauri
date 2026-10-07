@@ -23,7 +23,10 @@ interface BuildInfo {
   profile: string;
   version: string;
   arch: string;
+  /** 编译时刻（本地时区），形如 `2026-09-30 01:54:03 +08:00`。 */
   built_at: string;
+  /** WebView2 运行时（Chromium 内核）版本，例如 126.0.2592.87。 */
+  webview: string;
 }
 
 function isTauri(): boolean {
@@ -111,6 +114,9 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {t("about.builtAt")}: {buildInfo?.built_at ?? "—"}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {t("about.webview")}: {buildInfo?.webview || "—"}
           </Typography>
         </Box>
 

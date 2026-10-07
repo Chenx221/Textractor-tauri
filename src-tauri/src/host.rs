@@ -1013,6 +1013,14 @@ pub fn detach_all() -> usize {
     pids.len()
 }
 
+/// 当前已连接（已注入并建好管道）的进程 PID 列表。
+/// 前端在窗口（重新）加载时用它同步左上角的目标进程列表。
+pub fn connected_pids() -> Vec<u32> {
+    let mut pids: Vec<u32> = PROCESSES.lock().unwrap().keys().copied().collect();
+    pids.sort_unstable();
+    pids
+}
+
 pub fn insert_hook(app: &AppHandle, pid: u32, code: String) -> Result<(), String> {
     let Some(hp) = hookcode::parse(&code) else {
         return Err("Invalid hook code.".to_string());

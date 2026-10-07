@@ -58,6 +58,10 @@ pub fn zip_url() -> String {
 pub fn status(app: &AppHandle) -> Result<RomanjiDictStatus, String> {
     let dir = dict_dir(app)?;
     let installed = romanji::is_installed(&dir);
+    // 自定义词典：词条数/格式错误直接按当前文件内容解析，
+    // 构建阶段（交给 lindera）的错误则来自上一次加载结果。
+    let inspected = romanji::inspect_user_dict();
+    let user_dict_error = inspected.error.or_else(|| romanji::user_dict_state().error);
     Ok(RomanjiDictStatus {
         installed,
         path: dir.to_string_lossy().to_string(),
@@ -69,6 +73,10 @@ pub fn status(app: &AppHandle) -> Result<RomanjiDictStatus, String> {
         } else {
             None
         },
+        user_dict_exists: romanji::user_dict_path().is_some_and(|path| path.is_file()),
+        user_dict_path: romanji::user_dict_path().map(|path| path.to_string_lossy().to_string()),
+        user_dict_entries: inspected.entries,
+        user_dict_error,
     })
 }
 
@@ -217,7 +225,15 @@ mod tests {
     /// 联网测试（默认忽略）：完整跑一遍「下载 → 解压 → 加载 → 分词」。
     ///
     /// 若设置了 `TEXTACTOR_ROMANJI_TEST_ZIP`（本地已下载的 zip 路径）则跳过下载：
+    /// 联网测试（默认忽略）：完整跑一遍「下载 → 解压 → 加载 → 分词」，
+    /// 并验证自定义词典能覆盖 IPADIC 的错误断词/读音（如人名「刀哉」）。
+    ///
+    /// 若设置了 `TEXTACTOR_ROMANJI_TEST_ZIP`（本地已下载的 zip 路径）则跳过下载：
     /// `$env:TEXTACTOR_ROMANJI_TEST_ZIP="$env:TEMP\lindera-dict\ipadic.zip"`
+    ///
+    /// 注意：`romanji::init` 用的是 `OnceLock`（一个进程只生效一次），所以
+    /// 词典加载与自定义词典必须放在同一个测试里，否则同时跑两个测试时
+    /// 第二个 `init` 会被忽略。
     #[test]
     #[ignore]
     fn installs_and_loads_dictionary() {
@@ -229,8 +245,10 @@ mod tests {
             }
         };
 
-        let dest = std::env::temp_dir().join("textractor-romanji-dict-test");
-        let _ = fs::remove_dir_all(&dest);
+        // 自定义词典与词典目录同级，所以这里多套一层 root。
+        let root = std::env::temp_dir().join("textractor-romanji-dict-test");
+        let _ = fs::remove_dir_all(&root);
+        let dest = root.join("lindera-ipadic");
         extract_zip(&bytes, &dest).unwrap();
 
         // 解压应去掉 zip 内的 `lindera-ipadic/` 一层，直接得到词典文件。
@@ -247,5 +265,24 @@ mod tests {
         let out = romanji::romanize_ja("こんにちは、世界。");
         println!("romanji: {out}");
         assert!(out.starts_with("konnichi"), "unexpected romanji: {out}");
+
+        // 没有自定义词典时，IPADIC 会把「刀哉」拆成「刀 + 哉」。
+        let before = romanji::romanize_ja("刀哉");
+        println!("without user dictionary: {before}");
+
+        let user_dict = root.join(romanji::USER_DICT_FILE_NAME);
+        fs::write(&user_dict, "刀哉\tとうや\n").unwrap();
+        let state = romanji::reload();
+        println!("user dictionary state: {state:?}");
+        assert_eq!(state.entries, 1, "user dictionary was not parsed");
+
+        let after = romanji::romanize_ja("よいか、刀哉よ");
+        println!("with user dictionary: {after}");
+        assert!(
+            after.contains("touya"),
+            "custom reading was not applied: {after}"
+        );
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

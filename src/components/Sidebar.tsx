@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import {
+  Badge,
   Box,
   Divider,
   IconButton,
@@ -53,7 +54,12 @@ interface SidebarProps {
   onRemoveHook: () => void;
   onSearchHooks: () => void;
   isAdmin: boolean | null;
-  attachedProcess: ProcessInfo | null;
+  /** 已附加的目标进程（可能多个）。 */
+  targets: ProcessInfo[];
+  /** 当前操作目标 PID。 */
+  targetPid: number | null;
+  /** 切换当前操作目标。 */
+  onSelectTarget: (pid: number) => void;
 }
 
 interface ActionItem {
@@ -97,9 +103,14 @@ export function Sidebar({
   onRemoveHook,
   onSearchHooks,
   isAdmin,
-  attachedProcess,
+  targets,
+  targetPid,
+  onSelectTarget,
 }: SidebarProps) {
   const { t } = useTranslation();
+
+  const hasTarget = targetPid !== null;
+  const targetLabel = (process: ProcessInfo) => `${process.name} (PID ${process.pid})`;
 
   const renderAction = (item: ActionItem) => {
     const label = t(`sidebar.actions.${item.key}`);
@@ -139,7 +150,7 @@ export function Sidebar({
       item.key === "searchHooks";
     const disabled =
       (item.key === "restartAdmin" && isAdmin === true) ||
-      (needsProcess && attachedProcess === null);
+      (needsProcess && !hasTarget);
     const button = (
       <ListItemButton
         onClick={onClick}
@@ -209,35 +220,57 @@ export function Sidebar({
     >
       <Box sx={{ p: 1 }}>
         {collapsed ? (
-          <Tooltip title={t("sidebar.process")} placement="right">
+          <Tooltip
+            placement="right"
+            title={
+              targets.length > 0 ? (
+                <Box component="span" sx={{ whiteSpace: "pre-line" }}>
+                  {targets.map(targetLabel).join("\n")}
+                </Box>
+              ) : (
+                t("sidebar.process")
+              )
+            }
+          >
             <IconButton size="small" sx={{ width: "100%" }}>
-              <Cpu />
+              {/* 多目标时用徽标提示数量（不占宽度，折叠状态下也能看出来）。 */}
+              <Badge
+                color="primary"
+                max={99}
+                badgeContent={targets.length > 1 ? targets.length : 0}
+              >
+                <Cpu />
+              </Badge>
             </IconButton>
           </Tooltip>
         ) : (
           <Select
-            value={attachedProcess ? String(attachedProcess.pid) : ""}
+            value={targetPid !== null ? String(targetPid) : ""}
             displayEmpty
             size="small"
             fullWidth
-            renderValue={() =>
-              attachedProcess ? (
-                `${attachedProcess.name} (PID ${attachedProcess.pid})`
+            onChange={(e) => onSelectTarget(Number(e.target.value))}
+            renderValue={(value) => {
+              const current = targets.find((process) => String(process.pid) === value);
+              return current ? (
+                targetLabel(current)
               ) : (
                 <Box component="span" sx={{ color: "text.secondary" }}>
                   {t("sidebar.noProcess")}
                 </Box>
-              )
-            }
+              );
+            }}
           >
-            {attachedProcess ? (
-              <MenuItem value={String(attachedProcess.pid)}>
-                {attachedProcess.name} (PID {attachedProcess.pid})
-              </MenuItem>
-            ) : (
+            {targets.length === 0 ? (
               <MenuItem value="" disabled>
                 {t("sidebar.noProcess")}
               </MenuItem>
+            ) : (
+              targets.map((process) => (
+                <MenuItem key={process.pid} value={String(process.pid)}>
+                  {targetLabel(process)}
+                </MenuItem>
+              ))
             )}
           </Select>
         )}
