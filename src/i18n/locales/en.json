@@ -111,7 +111,12 @@
     "backgroundImage": "Background image",
     "backgroundImageOpacity": "Background image opacity",
     "browse": "Browse",
-    "clearImage": "Clear"
+    "clearImage": "Clear",
+    "diagnosticsTitle": "Diagnostics",
+    "diagnosticsHint": "Every load and save of settings.json is logged: time, size, hash, and whether the file was changed by something else. Check it if your settings ever reset on their own.",
+    "configLog": "View config log",
+    "openConfigDir": "Open config folder",
+    "tintFollowTheme": "Follow theme colors"
   },
   "extensions": {
     "title": "Extensions",
@@ -323,5 +328,28 @@
     "noResults": "No results yet...",
     "clear": "Clear",
     "saveResults": "Save results"
+  },
+  "configRecovery": {
+    "title": "Settings could not be loaded",
+    "unknown": "Unexpected error while reading the settings file.",
+    "fileLine": "File: {{path}}",
+    "fileMeta": "{{size}} · modified {{time}} · sha256 {{sha}}",
+    "choose": "Choose what to do",
+    "optionBackup": "Restore the last good backup",
+    "optionBackupHint": "Backed up {{time}} · {{size}}",
+    "optionHistory": "Restore the snapshot from {{stamp}}",
+    "optionDefaults": "Start over with default settings",
+    "defaultsWarning": "Everything you configured — API keys, fonts, extensions, window appearance — will be lost.",
+    "defaultsConfirm": "I understand: use the default settings",
+    "viewLog": "View log",
+    "logTitle": "Settings diagnostics log",
+    "logEmpty": "The log is empty.",
+    "openDir": "Open config folder",
+    "refresh": "Refresh",
+    "confirm": "Continue",
+    "working": "Working…",
+    "recoveredNotice": "settings.json was missing at startup and has been restored from the backup.",
+    "verdictNotice": "settings.json changed while the app was not running (modified by something else). See the log for details.",
+    "restoreBackup": "Restore previous settings"
   }
 }

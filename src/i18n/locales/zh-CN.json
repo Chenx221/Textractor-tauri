@@ -111,7 +111,12 @@
     "backgroundImage": "背景图片",
     "backgroundImageOpacity": "背景图片不透明度",
     "browse": "浏览",
-    "clearImage": "清除"
+    "clearImage": "清除",
+    "diagnosticsTitle": "诊断",
+    "diagnosticsHint": "每次读取/写入 settings.json 都会记日志：时间、大小、哈希，以及文件是否被其它程序改动。设置莫名其妙恢复默认时，先看这里。",
+    "configLog": "查看配置日志",
+    "openConfigDir": "打开配置目录",
+    "tintFollowTheme": "跟随主题配色"
   },
   "extensions": {
     "title": "扩展",
@@ -323,5 +328,28 @@
     "noResults": "暂无结果（等待搜索完成...）",
     "clear": "清空",
     "saveResults": "保存结果"
+  },
+  "configRecovery": {
+    "title": "配置读取失败",
+    "unknown": "读取配置文件时出现未知错误。",
+    "fileLine": "文件：{{path}}",
+    "fileMeta": "{{size}} · 修改于 {{time}} · sha256 {{sha}}",
+    "choose": "请选择处理方式",
+    "optionBackup": "用最近一次成功的备份恢复",
+    "optionBackupHint": "备份于 {{time}} · {{size}}",
+    "optionHistory": "用 {{stamp}} 的历史快照恢复",
+    "optionDefaults": "放弃现有配置，使用默认设置",
+    "defaultsWarning": "所有已配置的内容（API Key、字体、扩展、窗口外观等）都会丢失。",
+    "defaultsConfirm": "我确认要使用默认设置",
+    "viewLog": "查看日志",
+    "logTitle": "配置诊断日志",
+    "logEmpty": "日志为空。",
+    "openDir": "打开配置目录",
+    "refresh": "刷新",
+    "confirm": "继续",
+    "working": "处理中…",
+    "recoveredNotice": "启动时没有找到 settings.json，已自动从备份恢复。",
+    "verdictNotice": "settings.json 在程序未运行时被外部改动过，详见日志。",
+    "restoreBackup": "恢复上次配置"
   }
 }

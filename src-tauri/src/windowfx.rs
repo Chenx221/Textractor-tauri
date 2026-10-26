@@ -69,9 +69,8 @@ mod win {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::Graphics::Dwm::{
         DwmEnableBlurBehindWindow, DwmSetWindowAttribute, DWM_BLURBEHIND,
-        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
-        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWMSBT_MAINWINDOW,
-        DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW,
+        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_DONOTROUND, DWMWCP_ROUND, DWMSBT_MAINWINDOW, DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW,
     };
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 
@@ -111,6 +110,9 @@ mod win {
         tint_alpha: Option<f32>,
     ) -> Result<(), String> {
         let hwnd = hwnd_of(window)?;
+        // 悬浮窗（extra）浮在游戏画面上，DWM 给"可调整大小的无边框窗口"画的
+        // 那圈阴影/边线很显眼，单独去掉。
+        let extra = window.label() == "extra";
         unsafe {
             clear_effects(hwnd);
 
@@ -121,17 +123,76 @@ mod win {
                 _ => {}
             }
 
-            // 原生效果会覆盖整个窗口矩形，这里请求 DWM 在 Win11 上统一圆角裁剪
-            // 整个窗口（包括 none/透明模式），避免前端再叠一层 CSS 圆角造成双重圆角。
-            let corner: i32 = DWMWCP_ROUND;
-            DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_WINDOW_CORNER_PREFERENCE as u32,
-                &corner as *const i32 as *const c_void,
-                std::mem::size_of::<i32>() as u32,
-            );
+            if extra {
+                remove_shadow(hwnd);
+                // 纯透明（none）时圆角交给前端 CSS：系统圆角会顺带把 DWM 那圈
+                // 阴影弧带回来一点，得不偿失。只有开了原生背景效果（mica/亚克力）
+                // 时才需要系统裁剪整个窗口，否则直角背景会从 CSS 圆角里漏出来。
+                let corner: i32 = if effect == "none" {
+                    DWMWCP_DONOTROUND
+                } else {
+                    DWMWCP_ROUND
+                };
+                DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+                    &corner as *const i32 as *const c_void,
+                    std::mem::size_of::<i32>() as u32,
+                );
+            } else {
+                // 原生效果会覆盖整个窗口矩形，这里请求 DWM 在 Win11 上统一圆角裁剪
+                // 整个窗口（包括 none/透明模式），避免前端再叠一层 CSS 圆角造成双重圆角。
+                let corner: i32 = DWMWCP_ROUND;
+                DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+                    &corner as *const i32 as *const c_void,
+                    std::mem::size_of::<i32>() as u32,
+                );
+            }
         }
         Ok(())
+    }
+
+    /// 去掉无边框窗口外圈的投影。
+    ///
+    /// 不能再走 `DWMWA_NCRENDERING_POLICY = DWMNCRP_DISABLED` / `DwmExtendFrameIntoClientArea`
+    /// 这条路：前者让 DWM 不再绘制非客户区，Windows 会退回**传统 GDI 边框**，
+    /// 于是无边框窗口长出一条老式标题栏（有前车之鉴）。
+    ///
+    /// 现在只动窗口样式：把 `WS_THICKFRAME` 去掉。DWM 只为"可调整大小"的窗口
+    /// 画投影，去掉这个样式投影就没了；边缘拖拽仍由前端的
+    /// `startResizeDragging`（内部发 `WM_NCLBUTTONDOWN`）负责，不依赖这个样式。
+    unsafe fn remove_shadow(hwnd: HWND) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED,
+            SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_THICKFRAME,
+        };
+
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+        let next = style & !WS_THICKFRAME;
+        if next != style {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, next as isize);
+            // 样式变更后要让系统重算一次边框，否则旧边框会留到下次重绘。
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+            );
+        }
+
+        // Win11：关掉系统圆角（圆角矩形外面也会带一圈阴影弧）。
+        let corner: i32 = DWMWCP_DONOTROUND;
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            &corner as *const i32 as *const c_void,
+            std::mem::size_of::<i32>() as u32,
+        );
     }
 
     fn hwnd_of(window: &tauri::WebviewWindow) -> Result<HWND, String> {

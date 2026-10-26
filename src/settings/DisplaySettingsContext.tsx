@@ -2,14 +2,21 @@ import { useCallback, type CSSProperties } from "react";
 import { useConfig } from "./ConfigContext";
 import type { DisplaySettings, FontSettings } from "../types/display";
 
-export function fontToStyle(font: FontSettings): CSSProperties {
+/**
+ * 字体设置 → CSS 样式。
+ *
+ * `fallbackColor` 用于"用户没指定颜色"的情况：传进来主题的正文色，而不是让
+ * 文字去继承祖先元素。悬浮窗是透明窗口，继承链一旦断掉就会退回浏览器默认的
+ * 黑色（深色主题下直接看不见），所以这里显式给默认值。
+ */
+export function fontToStyle(font: FontSettings, fallbackColor?: string): CSSProperties {
   const style: CSSProperties = {
     fontFamily: font.family || undefined,
     fontSize: font.size,
     fontWeight: font.bold ? 700 : 400,
     fontStyle: font.italic ? "italic" : "normal",
     textDecoration: font.underline ? "underline" : "none",
-    color: font.color || undefined,
+    color: font.color || fallbackColor,
   };
 
   const shadows: string[] = [];

@@ -111,7 +111,12 @@
     "backgroundImage": "背景圖片",
     "backgroundImageOpacity": "背景圖片不透明度",
     "browse": "瀏覽",
-    "clearImage": "清除"
+    "clearImage": "清除",
+    "diagnosticsTitle": "診斷",
+    "diagnosticsHint": "每次讀取/寫入 settings.json 都會寫日誌：時間、大小、雜湊，以及檔案是否被其它程式改動。設定莫名恢復預設時，先看這裡。",
+    "configLog": "檢視設定日誌",
+    "openConfigDir": "開啟設定目錄",
+    "tintFollowTheme": "跟隨主題配色"
   },
   "extensions": {
     "title": "擴充功能",
@@ -323,5 +328,28 @@
     "noResults": "尚無結果...",
     "clear": "清除",
     "saveResults": "儲存結果"
+  },
+  "configRecovery": {
+    "title": "設定讀取失敗",
+    "unknown": "讀取設定檔時發生未知錯誤。",
+    "fileLine": "檔案：{{path}}",
+    "fileMeta": "{{size}} · 修改於 {{time}} · sha256 {{sha}}",
+    "choose": "請選擇處理方式",
+    "optionBackup": "用最近一次成功的備份還原",
+    "optionBackupHint": "備份於 {{time}} · {{size}}",
+    "optionHistory": "用 {{stamp}} 的歷史快照還原",
+    "optionDefaults": "放棄現有設定，使用預設值",
+    "defaultsWarning": "所有已設定的內容（API Key、字型、擴充功能、視窗外觀等）都會遺失。",
+    "defaultsConfirm": "我確認要使用預設設定",
+    "viewLog": "檢視日誌",
+    "logTitle": "設定診斷日誌",
+    "logEmpty": "日誌為空。",
+    "openDir": "開啟設定目錄",
+    "refresh": "重新整理",
+    "confirm": "繼續",
+    "working": "處理中…",
+    "recoveredNotice": "啟動時找不到 settings.json，已自動從備份還原。",
+    "verdictNotice": "settings.json 在程式未執行時被外部改動過，詳見日誌。",
+    "restoreBackup": "還原上次設定"
   }
 }

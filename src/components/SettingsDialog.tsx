@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
@@ -15,6 +16,7 @@ import {
   RadioGroup,
   Select,
   Slider,
+  Stack,
   Switch,
   TextField,
   Typography,
@@ -26,6 +28,7 @@ import { LANGUAGES } from "../i18n";
 import { useThemeMode } from "../ThemeModeProvider";
 import { useConfig } from "../settings/ConfigContext";
 import { useDisplaySettings } from "../settings/DisplaySettingsContext";
+import { ConfigLogDialog } from "./ConfigRecoveryDialog";
 import { FontSettingsEditor } from "./FontSettingsEditor";
 import { TranslationCacheDialog } from "./TranslationCacheDialog";
 import { formatBytes } from "../utils/format";
@@ -63,6 +66,8 @@ interface AppearanceValue {
   opacity: number;
   backgroundImage: string;
   backgroundImageOpacity: number;
+  /** 仅悬浮窗：面板底色跟随主题（不设 = 跟随）。 */
+  tintFollowTheme?: boolean;
 }
 
 type AppearancePatch = Partial<AppearanceValue>;
@@ -106,6 +111,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   // 翻译缓存概览：打开设置时读一次，关掉缓存管理后再刷新一次。
   const [cacheStats, setCacheStats] = useState<CacheOverview | null>(null);
   const [cacheOpen, setCacheOpen] = useState(false);
+  // 配置诊断日志窗口。
+  const [logOpen, setLogOpen] = useState(false);
 
   const loadCacheStats = useCallback(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
@@ -158,67 +165,91 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     onChange: (patch: AppearancePatch) => void,
     target: "window" | "extraWindow",
     opacityDisabled = false,
-  ) => (
-    <>
-      <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
-        <FormLabel>{t("settings.effect")}</FormLabel>
-        <Select
-          value={value.effect}
-          onChange={(e) => onChange({ effect: e.target.value as BackdropEffect })}
-        >
-          {EFFECT_OPTIONS.map((option) => (
-            <MenuItem key={option.value} value={option.value}>
-              {t(option.labelKey)}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+  ) => {
+    // 悬浮窗在"无原生效果"时也用 tint 作为面板底色，所以要一直显示出来，
+    // 否则用户存过的颜色会在界面里彻底看不到、也改不掉。
+    const showTint = value.effect !== "none" || target === "extraWindow";
+    const followTheme = target === "extraWindow" && value.tintFollowTheme !== false;
+    return (
+      <>
+        <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+          <FormLabel>{t("settings.effect")}</FormLabel>
+          <Select
+            value={value.effect}
+            onChange={(e) => onChange({ effect: e.target.value as BackdropEffect })}
+          >
+            {EFFECT_OPTIONS.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {t(option.labelKey)}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
 
-      {value.effect !== "none" && (
-        <>
-          <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
-            <FormLabel>{t("settings.effectTint")}</FormLabel>
-            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-              <input
-                type="color"
-                value={value.effectTint || "#202020"}
-                onChange={(e) => onChange({ effectTint: e.target.value })}
-                style={{
-                  width: 30,
-                  height: 30,
-                  padding: 0,
-                  border: "none",
-                  background: "none",
-                  cursor: "pointer",
-                }}
-              />
-              <TextField
-                size="small"
-                fullWidth
-                value={value.effectTint}
-                onChange={(e) => onChange({ effectTint: e.target.value })}
-                placeholder="#RRGGBB"
-                slotProps={{ htmlInput: { maxLength: 7 } }}
-              />
-              <Button size="small" onClick={() => onChange({ effectTint: "" })}>
-                {t("settings.clearImage")}
-              </Button>
-            </Box>
-          </FormControl>
+        {showTint && (
+          <>
+            <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+              <FormLabel>{t("settings.effectTint")}</FormLabel>
+              {target === "extraWindow" && (
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      size="small"
+                      checked={value.tintFollowTheme !== false}
+                      onChange={(e) => onChange({ tintFollowTheme: e.target.checked })}
+                    />
+                  }
+                  label={t("settings.tintFollowTheme")}
+                  sx={{ mb: 0.5 }}
+                />
+              )}
+              <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                <input
+                  type="color"
+                  value={value.effectTint || "#202020"}
+                  onChange={(e) => onChange({ effectTint: e.target.value })}
+                  disabled={followTheme}
+                  style={{
+                    width: 30,
+                    height: 30,
+                    padding: 0,
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                  }}
+                />
+                <TextField
+                  size="small"
+                  fullWidth
+                  value={value.effectTint}
+                  onChange={(e) => onChange({ effectTint: e.target.value })}
+                  placeholder="#RRGGBB"
+                  disabled={followTheme}
+                  slotProps={{ htmlInput: { maxLength: 7 } }}
+                />
+                <Button
+                  size="small"
+                  disabled={followTheme}
+                  onClick={() => onChange({ effectTint: "" })}
+                >
+                  {t("settings.clearImage")}
+                </Button>
+              </Box>
+            </FormControl>
 
-          <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
-            <FormLabel>{t("settings.effectTintOpacity")}</FormLabel>
-            <Slider
-              value={value.effectTintOpacity}
-              min={0}
-              max={1}
-              step={0.05}
-              valueLabelDisplay="auto"
-              onChange={(_, v) => onChange({ effectTintOpacity: v as number })}
-            />
-          </FormControl>
-        </>
-      )}
+            <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
+              <FormLabel>{t("settings.effectTintOpacity")}</FormLabel>
+              <Slider
+                value={value.effectTintOpacity}
+                min={0}
+                max={1}
+                step={0.05}
+                valueLabelDisplay="auto"
+                onChange={(_, v) => onChange({ effectTintOpacity: v as number })}
+              />
+            </FormControl>
+          </>
+        )}
 
       <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
         <FormLabel>{t("settings.windowOpacity")}</FormLabel>
@@ -264,7 +295,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         />
       </FormControl>
     </>
-  );
+    );
+  };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -597,6 +629,25 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             {t("cache.manage")}
           </Button>
         </Section>
+
+        {/* 诊断：设置莫名其妙恢复默认时，日志里能看到"谁在什么时候动了 settings.json"。 */}
+        <Section titleKey="settings.diagnosticsTitle">
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {t("settings.diagnosticsHint")}
+          </Typography>
+          <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
+            <Button size="small" variant="outlined" onClick={() => setLogOpen(true)}>
+              {t("settings.configLog")}
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => void invoke("open_config_dir").catch(() => {})}
+            >
+              {t("settings.openConfigDir")}
+            </Button>
+          </Stack>
+        </Section>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t("settings.close")}</Button>
@@ -610,6 +661,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           loadCacheStats();
         }}
       />
+
+      {/* 配置诊断日志：看到每次读写的记录，用来追"设置为什么被重置"。 */}
+      <ConfigLogDialog open={logOpen} onClose={() => setLogOpen(false)} />
     </Dialog>
   );
 }

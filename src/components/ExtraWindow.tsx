@@ -10,6 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
+import { BASE_BG } from "../theme";
 import { fontToStyle } from "../settings/DisplaySettingsContext";
 import { useConfig } from "../settings/ConfigContext";
 import { useImageDataUri } from "../hooks/useImageDataUri";
@@ -33,13 +34,20 @@ function hexToRgb(hex: string): string {
   return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
 }
 
+/** 上一次上报过的宽度，避免"只是高度变了"也去写一次配置。 */
+let lastReportedWidth = -1;
+
 /** 读取悬浮窗当前逻辑宽度并上报给主窗口持久化（下次打开恢复）。 */
 async function reportExtraWindowWidth() {
   try {
     const win = getCurrentWindow();
     const size = await win.innerSize();
     const sf = await win.scaleFactor();
-    await emit("extra-window-size", { width: Math.round(size.width / sf) }).catch(() => {});
+    const width = Math.round(size.width / sf);
+    // 自动高度每改一次高度都会触发 onResized；宽度没变就别重复写配置。
+    if (width === lastReportedWidth) return;
+    lastReportedWidth = width;
+    await emit("extra-window-size", { width }).catch(() => {});
   } catch {
     // 忽略上报失败。
   }
@@ -59,6 +67,11 @@ type ResizeDir =
 const HISTORY_BATCH = 50;
 /** 悬浮窗本地保留的历史缓冲上限（含实时块），超出丢弃最旧的。 */
 const MAX_HISTORY_BUFFER = 300;
+/** 自动高度：内容高度（含上下内边距）的裁剪范围。 */
+const HEIGHT_MIN = 72;
+const HEIGHT_MAX = 800;
+/** 面板高度过渡时长，必须与下面的 CSS transition 保持一致。 */
+const HEIGHT_TRANSITION_MS = 160;
 
 /**
  * 无边框悬浮窗（extra window）：显示当前查看线程的最新一条原文 / 译文。
@@ -324,10 +337,17 @@ export function ExtraWindowApp() {
       label: "extra",
       effect: settings.effect,
       dark: isDark,
-      tint: settings.effectTint || null,
+      // 跟随主题时传 null，让原生层按深浅主题自己选色，避免和 Web 层的面板底色打架。
+      tint: settings.tintFollowTheme ? null : settings.effectTint || null,
       tintAlpha: settings.effectTintOpacity,
     }).catch(() => {});
-  }, [settings.effect, settings.effectTint, settings.effectTintOpacity, isDark]);
+  }, [
+    settings.effect,
+    settings.effectTint,
+    settings.tintFollowTheme,
+    settings.effectTintOpacity,
+    isDark,
+  ]);
 
   // 置顶 / 点击穿透跟随设置。
   useEffect(() => {
@@ -463,39 +483,153 @@ export function ExtraWindowApp() {
   }, []);
 
   // 跟随最新内容时滚动到底部；浏览历史时回到该条开头。
+  //
+  // 只有"内容已经顶到高度上限"时才贴底：那时窗口不能再长，必须让最新一行可见。
+  // 没到上限时**保持贴顶**，这样长高的过程中顶部原文/注音不动、译文从下面
+  // 一条条露出来 —— 而不是先把内容往上挤、再整体回弹。
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const atTail = cursorRef.current >= bufferRef.current.length - 1;
-    el.scrollTop = atTail ? el.scrollHeight : 0;
+    // scrollHeight 已经含上下内边距，所以直接和上限比。
+    const atCap = el.scrollHeight >= HEIGHT_MAX;
+    el.scrollTop = atTail && atCap ? el.scrollHeight : 0;
   }, [view, cursor]);
 
-  // 自动调整窗口高度以适配内容（按内容自然高度计算，避免每次都叠加）。
-  // 翻译进行中（loading）暂不调整：等译文返回后再一次性调整，避免“先小后大”的跳动；
-  // 并加轻微防抖合并快速连续的内容变化。
-  useEffect(() => {
-    if (!settings.autoResizeHeight || !isTauri()) return;
-    const loading = view?.translations.some((e) => e.state === "loading") ?? false;
-    if (loading) return;
-    const timer = window.setTimeout(() => {
-      const content = contentRef.current;
-      if (!content) return;
+  // ---------------------------------------------------------- 自动高度 ----
+  //
+  // 关键点：**窗口尺寸的每一次变化都是"跳"的，动画交给 CSS**。
+  //
+  // 之前是逐帧 setSize 做补间，问题有三：
+  // 1. 每一帧都跨进程调用一次 SetWindowPos，WebView2 的重绘追不上窗口变化，
+  //    看起来就是一顿一顿的；
+  // 2. 长文本撑破当前高度时，贴底滚动会让"原文/注音"被挤出视线，等窗口长高
+  //    再把文字拉回来，于是出现"内容先往上挤、再展开"的怪异动作；
+  // 3. 顶部没有真正的锚点 —— 窗口长高时内容是跟着滚动的，不是"顶部固定、底部延申"。
+  //
+  // 现在：
+  // - 窗口高度一次性设成目标值（多出来的区域是透明的，看不见）；
+  // - 面板自己的 height 用 CSS transition 从旧值长到新值，内容被面板裁切，
+  //   于是视觉上就是"顶部原文/注音不动，底部一条条把译文露出来"；
+  // - 收缩时先让面板缩完，再把窗口收小（否则面板会被窗口裁掉，看起来是瞬缩）。
+  /** 面板自身的像素高度；null = 还没测量过，先用 100% 铺满窗口。 */
+  const [panelHeight, setPanelHeight] = useState<number | null>(null);
+  const panelHeightRef = useRef(0);
+  const sizeRef = useRef({ width: 0, height: 0 });
+  const shrinkTimerRef = useRef(0);
+  const targetRef = useRef(0);
+
+  /** 把原生窗口高度设成 h（宽度保持不变）。 */
+  const setWindowHeight = useCallback(async (h: number) => {
+    if (!isTauri()) return;
+    try {
       const win = getCurrentWindow();
-      const target = Math.min(Math.max(content.offsetHeight + 32, 72), 800);
-      void (async () => {
-        try {
-          const size = await win.innerSize();
-          const sf = await win.scaleFactor();
-          const logical = size.toLogical(sf);
-          if (Math.abs(logical.height - target) < 2) return;
-          await win.setSize(new LogicalSize(logical.width, target));
-        } catch {
-          // 忽略调整失败。
-        }
-      })();
-    }, 150);
-    return () => window.clearTimeout(timer);
-  }, [view, settings.autoResizeHeight]);
+      let width = sizeRef.current.width;
+      if (!width) {
+        const size = await win.innerSize();
+        const sf = await win.scaleFactor();
+        const logical = size.toLogical(sf);
+        width = logical.width;
+        sizeRef.current = { width, height: logical.height };
+      }
+      await win.setSize(new LogicalSize(width, h));
+      sizeRef.current = { width, height: h };
+    } catch {
+      // 忽略调整失败。
+    }
+  }, []);
+
+  /** 把面板/窗口高度调整到 target。 */
+  const applyHeight = useCallback(
+    (target: number) => {
+      const to = Math.round(target);
+      if (to === targetRef.current) return;
+      targetRef.current = to;
+      window.clearTimeout(shrinkTimerRef.current);
+
+      const from = panelHeightRef.current;
+      panelHeightRef.current = to;
+      setPanelHeight(to);
+
+      // 首次测量（from = 0）直接对齐，不做动画。
+      if (from === 0) {
+        void setWindowHeight(to);
+        return;
+      }
+      if (to > from) {
+        // 先扩窗口（透明区域看不见），面板再 CSS 过渡长上去 → 顶部固定、底部延申。
+        void setWindowHeight(to);
+      } else if (to < from) {
+        // 收缩：等面板过渡结束再收窗口，否则窗口先把面板裁掉，看起来是瞬缩。
+        shrinkTimerRef.current = window.setTimeout(() => {
+          if (targetRef.current !== to) return;
+          void setWindowHeight(to);
+        }, HEIGHT_TRANSITION_MS + 60);
+      }
+    },
+    [setWindowHeight],
+  );
+
+  // 记录窗口实际宽度（我们只改高度，但用户会拖边改宽）。
+  useEffect(() => {
+    if (!isTauri()) return;
+    const win = getCurrentWindow();
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+    const sync = async () => {
+      try {
+        const size = await win.innerSize();
+        const sf = await win.scaleFactor();
+        const logical = size.toLogical(sf);
+        if (!disposed) sizeRef.current = { width: logical.width, height: logical.height };
+      } catch {
+        // 忽略。
+      }
+    };
+    void sync();
+    void win.onResized(() => void sync()).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      window.clearTimeout(shrinkTimerRef.current);
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!settings.autoResizeHeight) return;
+    const content = contentRef.current;
+    if (!content) return;
+    let timer = 0;
+    const measure = () => {
+      window.clearTimeout(timer);
+      // 60ms 防抖：3 条译文几乎同时返回时只做一次调整。
+      timer = window.setTimeout(() => {
+        // 上下各 16px 内边距（scroll 容器 py: 2）。
+        const raw = content.offsetHeight + 32;
+        applyHeight(Math.min(Math.max(raw, HEIGHT_MIN), HEIGHT_MAX));
+      }, 60);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    // 重新显示时补一次（隐藏期间布局可能没更新）。
+    const onVisible = () => {
+      if (document.hidden) return;
+      // 强制重算一次：期间窗口可能被手动改过尺寸。
+      targetRef.current = 0;
+      panelHeightRef.current = 0;
+      measure();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearTimeout(timer);
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [settings.autoResizeHeight, applyHeight]);
 
   const handleClose = () => {
     if (isTauri()) {
@@ -531,8 +665,21 @@ export function ExtraWindowApp() {
   };
 
   const translationFont = settings.sameForBoth ? settings.source : settings.translation;
-  const defaultTint = isDark ? "#202023" : "#fafafc";
-  const tintRgb = hexToRgb(settings.effectTint || defaultTint);
+  // 主题文字色：用户没单独指定颜色时用它（深色主题下就是浅色字），
+  // 不依赖祖先元素继承 —— 透明窗口里继承链断掉会退回浏览器默认的黑色。
+  const textColor = theme.palette.text.primary;
+  /**
+   * 面板底色。
+   *
+   * `effect: none` 时面板底色完全由 tint 决定，而 tint 的输入框以前只在"有原生效果"
+   * 时才显示 —— 一旦存过 `#ffffff`，深色主题下面板还是白的，界面上还改不掉。
+   * 现在默认跟随主题（深色主题 = 暗底），取消"跟随主题"后才使用自定义颜色。
+   */
+  const defaultTint = isDark ? BASE_BG.dark.default : BASE_BG.light.default;
+  const tintHex = settings.tintFollowTheme
+    ? defaultTint
+    : settings.effectTint || defaultTint;
+  const tintRgb = hexToRgb(tintHex);
   // 原生效果（Aero/亚克力/云母）自带背景与 tint，Web 层只保留很淡的遮罩，
   // 避免高不透明度 + 夜间模式下叠加出与 Windows 原生不一致的颜色；
   // 遮罩颜色/强度由“tint 颜色 / tint 不透明度”控制。
@@ -556,7 +703,7 @@ export function ExtraWindowApp() {
         sx={{
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
-          ...fontToStyle(settings.source),
+          ...fontToStyle(settings.source, textColor),
         }}
       >
         {view?.original}
@@ -567,8 +714,9 @@ export function ExtraWindowApp() {
           sx={{
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
-            color: "text.secondary",
-            ...fontToStyle(translationFont),
+            // 注音与正文同色（以前这里的 secondary 会被 fontToStyle 里的空 color 覆盖，
+            // 实际一直是正文色；显式写成正文色，避免看起来"变暗"）。
+            ...fontToStyle(translationFont, textColor),
           }}
         >
           {view.romanji}
@@ -594,7 +742,7 @@ export function ExtraWindowApp() {
             sx={{
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
-              ...fontToStyle(translationFont),
+              ...fontToStyle(translationFont, textColor),
             }}
           >
             {entry.text}
@@ -624,7 +772,11 @@ export function ExtraWindowApp() {
   return (
     <>
       <GlobalStyles
-        styles={{ "html, body": { background: "transparent", overflow: "hidden" } }}
+        styles={{
+          // 让滚动条/选中色也跟着主题走（WebView2 按 color-scheme 画原生滚动条）。
+          html: { colorScheme: isDark ? "dark" : "light" },
+          body: { background: "transparent", overflow: "hidden" },
+        }}
       />
       <Box
         sx={{
@@ -641,11 +793,26 @@ export function ExtraWindowApp() {
         <Box
           sx={{
             position: "absolute",
-            inset: 0,
+            top: 0,
+            left: 0,
+            right: 0,
             zIndex: 1,
             pointerEvents: "none",
             overflow: "hidden",
             background: panelBg,
+            // 圆角由这里画（透明窗口，窗口外圈是透明的，圆角就是把面板自己裁圆）。
+            // 系统圆角只在开了 mica/亚克力时才启用（见 windowfx.rs），半径保持一致。
+            borderRadius: "8px",
+            // 自动高度：面板用自己的像素高度 + CSS 过渡。窗口已经先跳到目标高度
+            // （多出来的区域透明、看不见），所以视觉上只有面板在平滑长高/收缩，
+            // 顶部固定、底部延申。手动调高时直接铺满窗口。
+            height:
+              settings.autoResizeHeight && panelHeight !== null
+                ? `${panelHeight}px`
+                : "100%",
+            transition: settings.autoResizeHeight
+              ? `height ${HEIGHT_TRANSITION_MS}ms cubic-bezier(0.33, 0, 0.2, 1)`
+              : "none",
           }}
         >
           {bgImage && (
@@ -673,6 +840,9 @@ export function ExtraWindowApp() {
               boxSizing: "border-box",
               px: 2,
               py: 2,
+              // 始终为滚动条预留空间：否则"内容刚好放得下 ↔ 出现滚动条"会让
+              // 文本宽度来回变化（多折行 → 目标高度再变），自动高度会反复抖动。
+              scrollbarGutter: "stable",
               // 内容层必须接收鼠标事件，否则事件穿透到下层拖动层，
               // 导致滚轮无法滚动、滚动条一拖就变成移动整个悬浮窗。
               // 注意：不要在这里写任何 `::-webkit-scrollbar` 样式 —— 一旦写了，
@@ -682,11 +852,11 @@ export function ExtraWindowApp() {
               cursor: "move",
             }}
           >
-            <Box ref={contentRef}>
+            <Box ref={contentRef} sx={{ color: textColor }}>
             {!view || view.original.trim() === "" ? (
               <Typography
                 variant="body2"
-                sx={{ color: "text.secondary", ...fontToStyle(settings.source) }}
+                sx={{ ...fontToStyle(settings.source, theme.palette.text.secondary) }}
               >
                 {t("content.noOutput")}
               </Typography>

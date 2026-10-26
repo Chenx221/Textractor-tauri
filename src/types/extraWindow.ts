@@ -23,6 +23,14 @@ export interface ExtraWindowSettings {
   effect: BackdropEffect;
   /** 原生效果 tint 颜色（#RRGGBB，空 = 自动跟随主题）。 */
   effectTint: string;
+  /**
+   * 面板底色跟随主题（默认 true）。
+   *
+   * 以前 `effect: none` 时面板底色也由 `effectTint` 决定，但这个选项只在
+   * "有原生效果"时才显示 —— 于是一旦存过 `#ffffff`，切到深色主题后底还是白的，
+   * 而且在界面上根本改不掉。现在默认跟随主题，想固定某个颜色再手动取消。
+   */
+  tintFollowTheme: boolean;
   /** 原生效果 tint 不透明度 0..1。 */
   effectTintOpacity: number;
   /** 背景图路径（空 = 不使用）。 */

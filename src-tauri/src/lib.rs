@@ -10,6 +10,7 @@ mod saved;
 mod windowfx;
 mod ws;
 mod crypto;
+mod config_store;
 
 #[cfg(target_os = "windows")]
 mod host;
@@ -126,7 +127,7 @@ pub struct TexthookUpdateResult {
 }
 
 struct AppState {
-    config_path: std::path::PathBuf,
+    pub(crate) config_path: std::path::PathBuf,
     db: Arc<Mutex<Connection>>,
 }
 
@@ -881,108 +882,26 @@ fn restart_as_admin(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 读取配置文件。
-///
-/// 文件缺失时返回空对象（首次启动）；**文件存在但无法解析时**，先把原文件
-/// 备份成 `settings.json.<日期>.bak`，再返回错误 —— 前端拿到错误后会用默认
-/// 配置继续运行，并在 300ms 防抖后把默认配置写回 `settings.json`（即“重置”），
-/// 所以备份必须发生在这次覆盖写之前。备份采用**改名**而不是复制：重置后
-/// `settings.json` 由前端重新写出，坏文件只留下一份，不会每次启动都堆积。
+// 配置文件的读写已移到 `config_store`（诊断日志 / 备份 / 历史快照 / 故障恢复），
+// 命令名保持不变（`load_config` / `save_config`），前端调用方式不用改。
+
+/// 在资源管理器里打开配置目录（设置 → 诊断）。
 #[tauri::command]
-fn load_config(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
-    let content = match std::fs::read_to_string(&state.config_path) {
-        Ok(text) => text,
-        // 文件不存在（或读不了）：按“没有配置”处理，不覆盖、不报错。
-        Err(_) => return Ok(serde_json::Value::Object(serde_json::Map::new())),
-    };
-    match serde_json::from_str::<serde_json::Value>(&content) {
-        // 只有 JSON 对象才是有效配置；其它（数组/数字/null/空文件）同样按损坏处理。
-        Ok(value) if value.is_object() => Ok(value),
-        parsed => {
-            let reason = match parsed {
-                Err(err) => err.to_string(),
-                Ok(_) => "config file is not a JSON object".to_string(),
-            };
-            let backup = backup_corrupt_config(&state.config_path);
-            match backup {
-                Some(path) => Err(format!("{reason} (backed up to {})", path.display())),
-                None => Err(reason),
-            }
-        }
-    }
-}
-
-/// 把损坏的配置文件改名为 `原名.<日期>.bak`，返回备份路径（失败时 `None`）。
-/// 当日已有备份时追加序号（`...-1.bak`、`...-2.bak`），不覆盖旧备份。
-fn backup_corrupt_config(path: &std::path::Path) -> Option<std::path::PathBuf> {
-    if !path.is_file() {
-        return None;
-    }
-    let file_name = path.file_name()?.to_string_lossy().to_string();
-    let dir = path.parent()?;
-    let stamp = local_date();
-    let mut candidate = dir.join(format!("{file_name}.{stamp}.bak"));
-    let mut index = 1;
-    while candidate.exists() {
-        candidate = dir.join(format!("{file_name}.{stamp}-{index}.bak"));
-        index += 1;
-    }
-    std::fs::rename(path, &candidate).ok().map(|()| candidate)
-}
-
-/// 本地日期（`YYYY-MM-DD`）。Windows 用 `GetLocalTime` 取本地时区；
-/// 其它平台没有标准库时区支持，退回 UTC。
-#[cfg(target_os = "windows")]
-fn local_date() -> String {
-    use windows_sys::Win32::Foundation::SYSTEMTIME;
-    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
-
-    let mut now: SYSTEMTIME = unsafe { std::mem::zeroed() };
-    unsafe { GetLocalTime(&mut now) };
-    format!("{:04}-{:02}-{:02}", now.wYear, now.wMonth, now.wDay)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn local_date() -> String {
-    // Howard Hinnant 的 civil_from_days：把 Unix 天数换算成公历日期。
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let days = (secs / 86_400) as i64;
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = if month <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 };
-    format!("{year:04}-{month:02}-{day:02}")
-}
-
-/// 写入配置。
-///
-/// 先写同目录的临时文件再原子替换，避免写入过程中断电/被杀进程留下半截
-/// JSON（下一次启动就会因解析失败而被“重置”，正是丢配置的常见原因）。
-/// 临时文件名带进程号 + 递增序号，两个窗口同时保存也不会互相踩。
-#[tauri::command]
-fn save_config(state: tauri::State<AppState>, config: serde_json::Value) -> Result<(), String> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static SAVE_SEQ: AtomicU64 = AtomicU64::new(0);
-
-    let content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    let seq = SAVE_SEQ.fetch_add(1, Ordering::Relaxed);
-    let tmp = state
+fn open_config_dir(state: tauri::State<AppState>) -> Result<(), String> {
+    let dir = state
         .config_path
-        .with_extension(format!("json.{}.{seq}.tmp", std::process::id()));
-    std::fs::write(&tmp, content).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &state.config_path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        e.to_string()
-    })
+        .parent()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "无法定位配置目录".to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        open_with_default(&dir)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = dir;
+        Err("Only supported on Windows.".to_string())
+    }
 }
 
 #[tauri::command]
@@ -1430,7 +1349,7 @@ pub fn run() {
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&config_dir)?;
-            let config_path = config_dir.join("settings.json");
+            let config_path = config_dir.join(config_store::CONFIG_FILE);
             let db_path = config_dir.join("translation_cache.db");
             let db = Connection::open(&db_path)?;
             db.execute_batch(
@@ -1447,6 +1366,12 @@ pub fn run() {
                 config_path,
                 db: Arc::new(Mutex::new(db)),
             });
+            // 配置诊断：启动留痕 + 守护线程（发现"不是我们写的"改动立刻记日志）。
+            if let Some(state) = app.try_state::<AppState>() {
+                let path = state.config_path.clone();
+                config_store::log_start(&path, env!("CARGO_PKG_VERSION"));
+                config_store::start_watchdog(path);
+            }
             // 罗马音词典改为运行时从数据目录加载（不再内嵌，减小可执行文件体积）。
             #[cfg(target_os = "windows")]
             if let Ok(data_dir) = app.path().app_config_dir() {
@@ -1467,8 +1392,13 @@ pub fn run() {
             launch_game,
             list_fonts,
             restart_as_admin,
-            load_config,
-            save_config,
+            open_config_dir,
+            config_store::load_config,
+            config_store::save_config,
+            config_store::config_accept_defaults,
+            config_store::config_restore,
+            config_store::config_log_tail,
+            config_store::config_paths,
             cache_get,
             cache_put,
             cache_stats,
@@ -1522,6 +1452,10 @@ pub fn run() {
                     }
                 }
                 tauri::RunEvent::Exit => {
+                    // 退出留痕：下次启动靠它判断文件在"关机这段时间"有没有被外部改过。
+                    if let Some(state) = app.try_state::<AppState>() {
+                        config_store::log_exit(&state.config_path, "main");
+                    }
                     #[cfg(target_os = "windows")]
                     host::detach_all();
                     #[cfg(target_os = "windows")]
@@ -1534,7 +1468,7 @@ pub fn run() {
 
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
-    use super::{backup_corrupt_config, local_date};
+    use super::config_store::{backup_corrupt_config, local_date};
 
     /// `sysinfo` 升级后的运行时冒烟测试：确认仍能枚举到进程及其名称
     /// （避免"编译通过但列表为空/字段丢失"这类行为变化）。

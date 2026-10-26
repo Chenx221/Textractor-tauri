@@ -12,7 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import i18n from "../i18n";
-import type { AppConfig } from "../types/config";
+import type { AppConfig, ConfigLoadInfo } from "../types/config";
 import type { DisplaySettings, FontSettings } from "../types/display";
 import type {
   BackdropEffect,
@@ -39,7 +39,7 @@ function makeFont(size: number): FontSettings {
   };
 }
 
-const DEFAULT_CONFIG: AppConfig = {
+export const DEFAULT_CONFIG: AppConfig = {
   language: "en",
   themeMode: "system",
   hideSystemProcesses: false,
@@ -279,6 +279,7 @@ const DEFAULT_CONFIG: AppConfig = {
     effect: "none",
     effectTint: "",
     effectTintOpacity: 0.75,
+    tintFollowTheme: true,
     backgroundImage: "",
     backgroundImageOpacity: 0.6,
     alwaysOnTop: true,
@@ -295,6 +296,14 @@ const DEFAULT_CONFIG: AppConfig = {
 
 interface ConfigContextValue {
   config: AppConfig;
+  /** 本次启动的加载结果（含诊断判定），未加载完时为 null。 */
+  loadInfo: ConfigLoadInfo | null;
+  /** 配置损坏/读不出来，等用户决定：此时绝不写盘。 */
+  configBlocked: boolean;
+  /** 用户确认放弃现有配置、改用默认值。 */
+  acceptDefaults: () => Promise<void>;
+  /** 从备份（`backup`）或历史快照（`history:<文件名>`）恢复。 */
+  restoreConfig: (source: string) => Promise<void>;
   setLanguage: (language: string) => void;
   setThemeMode: (mode: ThemeMode) => void;
   setHideSystemProcesses: (value: boolean) => void;
@@ -421,6 +430,8 @@ function mergeConfig(partial: Partial<AppConfig> | null | undefined): AppConfig 
         partial.extraWindow?.effectTint ?? DEFAULT_CONFIG.extraWindow.effectTint,
       effectTintOpacity:
         partial.extraWindow?.effectTintOpacity ?? DEFAULT_CONFIG.extraWindow.effectTintOpacity,
+      tintFollowTheme:
+        partial.extraWindow?.tintFollowTheme ?? DEFAULT_CONFIG.extraWindow.tintFollowTheme,
       opacity: partial.extraWindow?.opacity ?? DEFAULT_CONFIG.extraWindow.opacity,
       effect: sanitizeEffect(partial.extraWindow?.effect),
       backgroundImage:
@@ -449,35 +460,64 @@ function mergeConfig(partial: Partial<AppConfig> | null | undefined): AppConfig 
   };
 }
 
+/** 后端异常时构造一个"阻塞"结果，保证同样弹窗让用户确认，而不是静默用默认值。 */
+function blockedInfo(detail: string): ConfigLoadInfo {
+  return {
+    status: "unreadable",
+    config: null,
+    detail,
+    path: "",
+    log_path: "",
+    file: { exists: false, len: 0, mtime: 0, created: 0, sha: "", parse: "missing", reason: "" },
+    backup: { exists: false, len: 0, mtime: 0, parse: "missing" },
+    history: [],
+    verdict: "unknown",
+    verdict_detail: "",
+  };
+}
+
 export function ConfigProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const configRef = useRef(config);
   configRef.current = config;
-  const loadedRef = useRef(false);
+  const [loadInfo, setLoadInfo] = useState<ConfigLoadInfo | null>(null);
+  // 只有"成功读到配置（或用户明确确认怎么处理）"之后才允许写盘。
+  // 否则一律不写 —— 这一条是"绝不悄悄用默认值覆盖用户配置"的关键。
+  const commitRef = useRef(false);
   const lastEmittedRef = useRef("");
   const lastAppliedRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      let raw: Partial<AppConfig> | null = null;
-      if (isTauri()) {
+      if (!isTauri()) {
         try {
-          raw = await invoke<Partial<AppConfig>>("load_config");
+          const raw = JSON.parse(
+            localStorage.getItem(STORAGE_KEY) ?? "null",
+          ) as Partial<AppConfig> | null;
+          if (!cancelled && raw && Object.keys(raw).length > 0) setConfig(mergeConfig(raw));
         } catch {
-          raw = null;
+          /* 浏览器里只用于开发预览，忽略 */
         }
-      } else {
-        try {
-          raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<AppConfig>;
-        } catch {
-          raw = null;
+        commitRef.current = true;
+        return;
+      }
+      try {
+        const res = await invoke<ConfigLoadInfo>("load_config");
+        if (cancelled) return;
+        setLoadInfo(res);
+        if (res.status === "damaged" || res.status === "unreadable") {
+          // 需要用户确认用哪份配置：先不提交，弹窗里处理。
+          return;
         }
+        if (res.config && Object.keys(res.config).length > 0) {
+          setConfig(mergeConfig(res.config));
+        }
+        commitRef.current = true;
+      } catch (err) {
+        if (cancelled) return;
+        setLoadInfo(blockedInfo(String(err)));
       }
-      if (!cancelled && raw && Object.keys(raw).length > 0) {
-        setConfig(mergeConfig(raw));
-      }
-      loadedRef.current = true;
     };
     void load();
     return () => {
@@ -486,22 +526,39 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!loadedRef.current) return;
+    if (!commitRef.current) return;
+    if (!isTauri()) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+      return;
+    }
+    // 只有主窗口写盘：两个窗口各持一份全量内存状态、互相整份覆盖，
+    // 是"设置莫名其妙退回旧值"的另一个来源。
+    if (!isMainWindow()) return;
     const id = window.setTimeout(() => {
-      if (isTauri()) {
-        const json = JSON.stringify(config);
-        void invoke("save_config", { config }).catch(() => {});
-        // 只有主窗口负责广播配置变更，避免窗口间互相触发形成循环。
-        if (isMainWindow() && lastEmittedRef.current !== json) {
-          lastEmittedRef.current = json;
-          void emit("config-changed", config).catch(() => {});
-        }
-      } else {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+      const json = JSON.stringify(config);
+      void invoke("save_config", { config }).catch(() => {});
+      if (lastEmittedRef.current !== json) {
+        lastEmittedRef.current = json;
+        void emit("config-changed", config).catch(() => {});
       }
     }, 300);
     return () => window.clearTimeout(id);
   }, [config]);
+
+  // 用户确认"放弃现有配置"或"从备份/快照恢复"后，才重新允许写盘。
+  const acceptDefaults = useCallback(async () => {
+    await invoke("config_accept_defaults").catch(() => {});
+    commitRef.current = true;
+    setLoadInfo(null);
+    setConfig({ ...DEFAULT_CONFIG });
+  }, []);
+
+  const restoreConfig = useCallback(async (source: string) => {
+    const value = await invoke<Partial<AppConfig>>("config_restore", { source });
+    commitRef.current = true;
+    setLoadInfo(null);
+    setConfig(mergeConfig(value));
+  }, []);
 
   // 非主窗口（extra window）监听主窗口广播的配置变更并应用。
   useEffect(() => {
@@ -531,6 +588,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     let unlisten: UnlistenFn | undefined;
     void listen<{ x: number; y: number }>("extra-window-position", (event) => {
       if (disposed) return;
+      if (!commitRef.current) return;
       setConfig((prev) => ({
         ...prev,
         extraWindow: { ...prev.extraWindow, position: { x: event.payload.x, y: event.payload.y } },
@@ -552,6 +610,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     let unlisten: UnlistenFn | undefined;
     void listen<{ width: number }>("extra-window-size", (event) => {
       if (disposed) return;
+      // 配置还没成功加载/还没得到用户确认时，不记录也不写盘。
+      if (!commitRef.current) return;
       const next: AppConfig = {
         ...configRef.current,
         extraWindow: { ...configRef.current.extraWindow, width: event.payload.width },
@@ -639,6 +699,10 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       config,
+      loadInfo,
+      configBlocked: loadInfo?.status === "damaged" || loadInfo?.status === "unreadable",
+      acceptDefaults,
+      restoreConfig,
       setLanguage,
       setThemeMode,
       setHideSystemProcesses,
@@ -652,6 +716,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     }),
     [
       config,
+      loadInfo,
+      acceptDefaults,
+      restoreConfig,
       setLanguage,
       setThemeMode,
       setHideSystemProcesses,

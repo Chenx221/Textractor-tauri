@@ -1,6 +1,10 @@
 import { createTheme, type Theme } from "@mui/material/styles";
 
 export type ThemeMode = "light" | "dark" | "system";
+export const BASE_BG = {
+  light: { default: "#f5f5f7", paper: "#ffffff" },
+  dark: { default: "#1b1b1f", paper: "#222227" },
+} as const;
 
 const typography = {
   fontFamily: [
@@ -33,10 +37,7 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 export function createAppTheme(mode: "light" | "dark", backgroundAlpha = 1): Theme {
-  const bg =
-    mode === "dark"
-      ? { default: "#1b1b1f", paper: "#222227" }
-      : { default: "#f5f5f7", paper: "#ffffff" };
+  const bg = BASE_BG[mode];
   return createTheme({
     palette: {
       mode,
@@ -70,6 +71,14 @@ export function createAppTheme(mode: "light" | "dark", backgroundAlpha = 1): The
       MuiBackdrop: {
         styleOverrides: {
           root: { backgroundColor: "transparent" },
+        },
+      },
+      MuiSnackbarContent: {
+        styleOverrides: {
+          root: {
+            backgroundColor: bg.paper,
+            color: mode === "dark" ? "rgba(255,255,255,0.87)" : "rgba(0,0,0,0.87)",
+          },
         },
       },
     },
