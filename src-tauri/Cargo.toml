@@ -41,7 +41,7 @@ sha2 = "0.11"
 base64 = "0.23"
 tungstenite = "0.30"
 lindera = "6.2"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # texthook.dll 的运行时更新：解压上游 Chenx221/Textractor 的 7z（LZMA2 + BCJ2，纯 Rust 实现）
 sevenz-rust2 = "0.23"
 
