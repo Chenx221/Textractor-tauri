@@ -11,6 +11,7 @@ mod windowfx;
 mod ws;
 mod crypto;
 mod config_store;
+mod release;
 
 #[cfg(target_os = "windows")]
 mod host;
@@ -904,6 +905,23 @@ fn open_config_dir(state: tauri::State<AppState>) -> Result<(), String> {
     }
 }
 
+/// 用默认浏览器打开 http(s) 链接（"关于 → 在 GitHub 上查看"）。
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Only http(s) URLs are allowed.".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        open_with_default(std::path::Path::new(&url))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = url;
+        Err("Only supported on Windows.".to_string())
+    }
+}
+
 #[tauri::command]
 fn cache_get(
     state: tauri::State<AppState>,
@@ -1393,6 +1411,8 @@ pub fn run() {
             list_fonts,
             restart_as_admin,
             open_config_dir,
+            open_url,
+            release::release_notes,
             config_store::load_config,
             config_store::save_config,
             config_store::config_accept_defaults,

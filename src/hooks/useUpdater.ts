@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 /** 更新流程状态。 */
@@ -12,6 +13,17 @@ export type UpdateStatus =
   | "done"
   | "error";
 
+/** GitHub Release 里的更新日志（后端 `release_notes` 命令返回）。 */
+export interface ReleaseNotes {
+  tag: string;
+  name: string;
+  /** Markdown 正文。 */
+  body: string;
+  published_at: string;
+  /** Release 页面地址。 */
+  url: string;
+}
+
 export interface UpdateInfo {
   /** 服务器公布的新版本号。 */
   version: string;
@@ -19,8 +31,18 @@ export interface UpdateInfo {
   currentVersion: string;
   /** 发布时间（RFC 3339）。 */
   date?: string;
-  /** 发布说明。 */
+  /**
+   * `latest.json` 里的 notes。构建时由 CI 写死的安装包清单，
+   * 只作为拿不到 GitHub Release 时的兜底。
+   */
   body?: string;
+  /** 从 GitHub API 拉到的真实更新日志（发布后在 Release 页面编辑的那份）。 */
+  notes?: ReleaseNotes;
+  /**
+   * 更新日志的拉取状态：
+   * loading = 还在请求，避免先闪一下 latest.json 里的文件清单。
+   */
+  notesStatus?: "loading" | "ok" | "failed";
 }
 
 export interface UseUpdaterResult {
@@ -93,9 +115,28 @@ export function useUpdater(): UseUpdaterResult {
         currentVersion: update.currentVersion,
         date: update.date,
         body: update.body,
+        notesStatus: "loading",
       };
       setInfo(next);
       setStatus("available");
+      // 更新日志单独从 GitHub Release 拉：`latest.json` 里的 notes 只是 CI 写死的
+      // 安装包清单，真正的更新日志是发布后在 Release 页面编辑的。失败就算了，
+      // 界面会退回 `body`。
+      void invoke<ReleaseNotes>("release_notes", { version: update.version })
+        .then((notes) => {
+          setInfo((prev) =>
+            prev && prev.version === update.version
+              ? { ...prev, notes, notesStatus: "ok" }
+              : prev,
+          );
+        })
+        .catch(() => {
+          setInfo((prev) =>
+            prev && prev.version === update.version
+              ? { ...prev, notesStatus: "failed" }
+              : prev,
+          );
+        });
       return next;
     } catch (e) {
       updateRef.current = null;

@@ -258,7 +258,9 @@
       "installing": "正在安装…",
       "done": "安装完成，正在重启…",
       "error": "更新失败：{{error}}",
-      "open": "查看详情"
+      "open": "查看详情",
+      "viewOnGithub": "在 GitHub 上查看",
+      "loadingNotes": "正在获取更新日志…"
     },
     "texthook": {
       "title": "texthook 组件",

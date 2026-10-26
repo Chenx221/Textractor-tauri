@@ -9,7 +9,9 @@ import {
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
 import { useUpdater } from "../hooks/useUpdater";
+import { ReleaseNotesBody } from "./ReleaseNotesBody";
 
 /**
  * “关于”对话框里的更新区块：打开时自动检查一次，发现新版本可原地下载并安装。
@@ -63,11 +65,11 @@ export function UpdatePanel() {
             sx={{ width: "100%" }}
           />
         )}
-        {status === "available" && info?.body && (
+        {status === "available" && info && (
           <Box
             sx={{
               width: "100%",
-              maxHeight: 120,
+              maxHeight: 180,
               overflow: "auto",
               textAlign: "left",
               bgcolor: "action.hover",
@@ -75,14 +77,34 @@ export function UpdatePanel() {
               p: 1,
             }}
           >
-            <Typography
-              variant="caption"
-              component="pre"
-              sx={{ whiteSpace: "pre-wrap", fontFamily: "inherit", m: 0 }}
-            >
-              {info.body}
-            </Typography>
+            {info.notesStatus === "loading" && (
+              <Typography variant="caption" color="text.secondary">
+                {t("about.update.loadingNotes")}
+              </Typography>
+            )}
+            {info.notesStatus === "ok" && info.notes?.body && (
+              <ReleaseNotesBody markdown={info.notes.body} />
+            )}
+            {/* 拉不到 GitHub Release 时才退回 latest.json 里的 notes。 */}
+            {info.notesStatus === "failed" && info.body && (
+              <Typography
+                variant="caption"
+                component="pre"
+                sx={{ whiteSpace: "pre-wrap", fontFamily: "inherit", m: 0 }}
+              >
+                {info.body}
+              </Typography>
+            )}
           </Box>
+        )}
+        {status === "available" && info?.notes?.url && (
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => void invoke("open_url", { url: info.notes?.url }).catch(() => {})}
+          >
+            {t("about.update.viewOnGithub")}
+          </Button>
         )}
         {status === "error" && (
           <Typography variant="body2" color="error" sx={{ wordBreak: "break-word" }}>
