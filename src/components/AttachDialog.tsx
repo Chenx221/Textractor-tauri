@@ -3,6 +3,7 @@ import {
   Box,
   Button,
   Checkbox,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -98,7 +99,9 @@ export function AttachDialog({ open, onClose, onAttach, attachedPids }: AttachDi
         if (!hit) return false;
       }
       if (archFilter !== "all" && p.arch !== archFilter) return false;
-      if (hideNoTitle && !p.title) return false;
+      // 渲染进程（--type=renderer）一般没有窗口标题，但往往正是要附加的目标，
+      // 所以"隐藏无标题"时保留它们，避免用户勾了过滤就找不到游戏。
+      if (hideNoTitle && !p.title && !p.is_renderer) return false;
       if (config.hideSystemProcesses && p.is_system) return false;
       return true;
     });
@@ -239,6 +242,18 @@ export function AttachDialog({ open, onClose, onAttach, attachedPids }: AttachDi
                         />
                       ) : null}
                       <Box component="span">{p.name}</Box>
+                      {/* 渲染进程标记：这类进程没有窗口标题，但常常才是要附加的目标。 */}
+                      {p.is_renderer && (
+                        <Tooltip title={t("attach.rendererHint")}>
+                          <Chip
+                            size="small"
+                            label={t("attach.renderer")}
+                            color="info"
+                            variant="outlined"
+                            sx={{ height: 18, fontSize: 11, "& .MuiChip-label": { px: 0.75 } }}
+                          />
+                        </Tooltip>
+                      )}
                       {/* 已附加的目标：点它会直接从左上角选框切过去，不会重复注入。 */}
                       {attachedPids.includes(p.pid) && (
                         <Tooltip title={t("attach.attachedTo", { name: p.name, pid: p.pid })}>

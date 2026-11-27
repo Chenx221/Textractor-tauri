@@ -190,7 +190,7 @@
     "filterFile": "Filter table file",
     "fileHint": "Optional: each line is a regex",
     "replacerFileHint": "|ORIG|text|BECOMES|replacement|END| format",
-    "aliyunKeyHint": "general/pro: AccessKeyId|AccessKeySecret",
+    "aliyunKeyHint": "Create a RAM user with machine translation permission in the Aliyun console, then fill in its AccessKey ID and Secret.",
     "bingKeyHint": "Optional: Azure subscription key (free endpoint used if empty)",
     "sourceLanguage": "Source language",
     "targetLanguage": "Target language",
@@ -202,7 +202,9 @@
     "wsServerPort": "Server port",
     "wsServerIncludeClipboard": "Include clipboard text",
     "wsClient": "WebSocket client",
-    "wsClientUrl": "Server URL"
+    "wsClientUrl": "Server URL",
+    "accessKeyId": "AccessKey ID",
+    "accessKeySecret": "AccessKey Secret"
   },
   "cache": {
     "title": "Translation cache",
@@ -295,7 +297,9 @@
     "cancel": "Cancel",
     "attachedTo": "Attached to {{name}} (PID {{pid}})",
     "forgot": "Forgot {{name}}",
-    "noResults": "No matching processes"
+    "noResults": "No matching processes",
+    "renderer": "renderer",
+    "rendererHint": "Chromium renderer process (--type=renderer). It has no window title, but embedded-browser / Electron games usually output their text here."
   },
   "hook": {
     "code": "Hook code",

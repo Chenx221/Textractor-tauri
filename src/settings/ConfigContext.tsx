@@ -115,7 +115,7 @@ export const DEFAULT_CONFIG: AppConfig = {
       provider: "aliyun",
       sourceLanguage: "ja",
       targetLanguage: "zh",
-      settings: { version: "free", authKey: "" },
+      settings: { version: "general", accessKeyId: "", accessKeySecret: "" },
     },
     {
       id: "bing",
@@ -360,6 +360,22 @@ function mergeConfig(partial: Partial<AppConfig> | null | undefined): AppConfig 
         list.some((l) => l.value === value);
       const targetList = def.targetLanguages ?? def.languages;
       let settings = ext.settings ?? {};
+      // 阿里云：free 端点已删除（网页接口做敏感词审查，基本不可用），
+      // 旧配置里的 "AccessKeyId|AccessKeySecret" 拆成两个独立字段。
+      if (ext.provider === "aliyun") {
+        const next: Record<string, string> = { ...settings };
+        if (!next.version || next.version === "free") next.version = "general";
+        const legacy = next.authKey ?? "";
+        if (legacy) {
+          const [id, secret] = legacy.split("|");
+          if (!next.accessKeyId) next.accessKeyId = (id ?? "").trim();
+          if (!next.accessKeySecret) next.accessKeySecret = (secret ?? "").trim();
+          delete next.authKey;
+        }
+        if (!next.accessKeyId) next.accessKeyId = "";
+        if (!next.accessKeySecret) next.accessKeySecret = "";
+        settings = next;
+      }
       // AI 服务补默认系统提示词 / 温度 / 思考开关（老配置也生效）。
       if (AI_PROVIDERS.has(ext.provider)) {
         if (!settings.systemPrompt) settings = { ...settings, systemPrompt: AI_DEFAULT_SYSTEM_PROMPT };

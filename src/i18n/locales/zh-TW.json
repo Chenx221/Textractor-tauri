@@ -190,7 +190,7 @@
     "filterFile": "過濾表檔案",
     "fileHint": "選填：每行一個正則表達式",
     "replacerFileHint": "格式 |ORIG|文字|BECOMES|替換|END|",
-    "aliyunKeyHint": "general/pro：AccessKeyId|AccessKeySecret",
+    "aliyunKeyHint": "在阿里雲控制台建立有機器翻譯權限的 RAM 使用者，把它的 AccessKey ID 與 Secret 分別填入下面兩欄。",
     "bingKeyHint": "選填：Azure 訂閱金鑰（留空則使用免費端點）",
     "sourceLanguage": "來源語言",
     "targetLanguage": "目標語言",
@@ -202,7 +202,9 @@
     "wsServerPort": "伺服器連接埠",
     "wsServerIncludeClipboard": "包含剪貼簿文字",
     "wsClient": "WebSocket 用戶端",
-    "wsClientUrl": "伺服器位址"
+    "wsClientUrl": "伺服器位址",
+    "accessKeyId": "AccessKey ID",
+    "accessKeySecret": "AccessKey Secret"
   },
   "cache": {
     "title": "翻譯快取",
@@ -295,7 +297,9 @@
     "cancel": "取消",
     "attachedTo": "已附加到 {{name}} (PID {{pid}})",
     "forgot": "已清除：{{name}}",
-    "noResults": "沒有符合的程序"
+    "noResults": "沒有符合的程序",
+    "renderer": "渲染程序",
+    "rendererHint": "Chromium 渲染程序（--type=renderer）。這類程序沒有視窗標題，但內嵌瀏覽器 / Electron 遊戲的文字通常就在這裡。"
   },
   "hook": {
     "code": "Hook 代碼",

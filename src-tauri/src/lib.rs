@@ -168,6 +168,8 @@ struct BuildInfo {
     built_at: String,
     /// WebView2 运行时（Chromium 内核）版本；非 Windows 或读取失败时为空串。
     webview: String,
+    /// 是否是正式发版构建（详见 `is_release_build`）。
+    official: bool,
 }
 
 #[derive(Serialize)]
@@ -178,6 +180,9 @@ struct ProcessInfo {
     arch: String,
     has_file: bool,
     is_system: bool,
+    /// 命令行里带 `--type=renderer`（Chromium/Electron/CEF 渲染进程）。
+    /// 这类进程一般没有窗口标题，靠这个标记让用户在"隐藏无标题"过滤下也能看到它们。
+    is_renderer: bool,
     icon: Option<String>,
 }
 
@@ -285,13 +290,31 @@ fn get_system_info() -> SystemInfo {
 
 #[tauri::command]
 fn get_build_info() -> BuildInfo {
+    let version = env!("CARGO_PKG_VERSION").to_string();
     BuildInfo {
         profile: if cfg!(debug_assertions) { "debug".to_string() } else { "release".to_string() },
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        official: is_release_build(&version),
+        version,
         arch: std::env::consts::ARCH.to_string(),
         built_at: env!("BUILD_TIME").to_string(),
         webview: tauri::webview_version().unwrap_or_default(),
     }
+}
+
+/// 是否是正式发版构建。
+///
+/// 发版时 `.github/workflows/release.yml` 会先跑 `scripts/set-version.mjs`，把
+/// package.json / tauri.conf.json / Cargo.toml 的版本改成日期版本（如 `26.10.26`）；
+/// 仓库里保留的是占位版本 `0.1.0`，所以本地 `npm run tauri build` 出来的版本号恒为 0.x。
+/// 据此区分：`0.x` = 本地构建，前端可以安静地关掉"发现新版本"提示。
+///
+/// 注意：将来若改用 `1.x` 这类常规 semver 发布，需要同步改这条判据。
+fn is_release_build(version: &str) -> bool {
+    version
+        .split('.')
+        .next()
+        .and_then(|major| major.parse::<u32>().ok())
+        .is_some_and(|major| major >= 20)
 }
 
 #[tauri::command]
@@ -838,6 +861,20 @@ fn list_processes() -> Vec<ProcessInfo> {
             };
             let has_file = process.exe().map(|p| p.exists()).unwrap_or(false);
             let is_system = is_system_process(process);
+            // 只在"非系统进程"上读命令行：系统进程大多读不到，也基本没有渲染进程。
+            let is_renderer = {
+                #[cfg(target_os = "windows")]
+                {
+                    !is_system
+                        && process_win::command_line(pid)
+                            .map(|cmd| process_win::is_renderer_command_line(&cmd))
+                            .unwrap_or(false)
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    false
+                }
+            };
             let icon = {
                 #[cfg(target_os = "windows")]
                 {
@@ -850,7 +887,7 @@ fn list_processes() -> Vec<ProcessInfo> {
                     None
                 }
             };
-            ProcessInfo { pid, name, title, arch, has_file, is_system, icon }
+            ProcessInfo { pid, name, title, arch, has_file, is_system, is_renderer, icon }
         })
         .collect();
 
@@ -1355,6 +1392,132 @@ mod process_win {
             "x86"
         }
     }
+
+    /// `UNICODE_STRING`（`NtQueryInformationProcess` 的输出结构）。
+    #[repr(C)]
+    struct UnicodeString {
+        length: u16,
+        maximum_length: u16,
+        buffer: *mut u16,
+    }
+
+    type NtQueryInformationProcessFn =
+        unsafe extern "system" fn(*mut core::ffi::c_void, u32, *mut core::ffi::c_void, u32, *mut u32) -> i32;
+
+    /// 取 `NtQueryInformationProcess`（windows-sys 未收录，从 ntdll 动态解析一次）。
+    fn nt_query_information_process() -> Option<NtQueryInformationProcessFn> {
+        use std::sync::OnceLock;
+        use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+
+        static FN: OnceLock<Option<NtQueryInformationProcessFn>> = OnceLock::new();
+        *FN.get_or_init(|| unsafe {
+            let name: Vec<u16> = "ntdll.dll".encode_utf16().chain(std::iter::once(0)).collect();
+            let module = GetModuleHandleW(name.as_ptr());
+            if module.is_null() {
+                return None;
+            }
+            let addr = GetProcAddress(module, b"NtQueryInformationProcess\0".as_ptr());
+            addr.map(|f| std::mem::transmute::<
+                unsafe extern "system" fn() -> isize,
+                NtQueryInformationProcessFn,
+            >(f))
+        })
+    }
+
+    /// 读取进程命令行（`ProcessCommandLineInformation`，Windows 8.1+）。
+    /// 拿不到（受保护进程 / 权限不足）时返回 `None`。
+    pub fn command_line(pid: u32) -> Option<String> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+
+        // ProcessCommandLineInformation
+        const CLASS: u32 = 60;
+
+        let query = nt_query_information_process()?;
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return None;
+            }
+            // 先问需要多大，再按需分配；失败也留足兜底大小。
+            let mut needed: u32 = 0;
+            let _ = query(handle, CLASS, std::ptr::null_mut(), 0, &mut needed);
+            let mut buf = vec![0u8; needed.max(2048) as usize];
+            let status = query(
+                handle,
+                CLASS,
+                buf.as_mut_ptr() as *mut core::ffi::c_void,
+                buf.len() as u32,
+                &mut needed,
+            );
+            CloseHandle(handle);
+            if status < 0 {
+                return None;
+            }
+            let us = buf.as_ptr() as *const UnicodeString;
+            let bytes = (*us).length as usize;
+            if bytes == 0 || bytes > buf.len().saturating_sub(std::mem::size_of::<UnicodeString>()) {
+                return None;
+            }
+            let chars = std::slice::from_raw_parts((*us).buffer, bytes / 2);
+            Some(String::from_utf16_lossy(chars))
+        }
+    }
+
+    /// 命令行里是否带 `--type=renderer`（Chromium / Electron / CEF 的渲染进程）。
+    ///
+    /// 移植自 C++ 的 `IsRendererCommandLine`：只在引号外识别开关，且开关必须位于
+    /// 命令行开头或紧跟空白；同时支持 `--type="renderer"`。
+    pub fn is_renderer_command_line(command_line: &str) -> bool {
+        if !command_line.contains("--type=") {
+            return false;
+        }
+        let chars: Vec<char> = command_line.chars().collect();
+        let n = chars.len();
+        let mut in_quotes = false;
+        let mut i = 0usize;
+        while i < n {
+            let c = chars[i];
+            if c == '"' {
+                // 转义的引号（\"）不切换引号状态。
+                if i > 0 && chars[i - 1] == '\\' {
+                    i += 1;
+                    continue;
+                }
+                in_quotes = !in_quotes;
+                i += 1;
+                continue;
+            }
+            if in_quotes {
+                i += 1;
+                continue;
+            }
+            if i + 7 > n {
+                break;
+            }
+            if chars[i..i + 7].iter().collect::<String>() != "--type=" {
+                i += 1;
+                continue;
+            }
+            // 开关必须位于命令行开头或紧跟空白（避免误匹配 `x--type=`）。
+            if i > 0 && chars[i - 1] != ' ' && chars[i - 1] != '\t' {
+                i += 1;
+                continue;
+            }
+            let mut j = i + 7;
+            if j < n && chars[j] == '"' {
+                j += 1;
+            }
+            let start = j;
+            while j < n && chars[j] != ' ' && chars[j] != '\t' && chars[j] != '"' {
+                j += 1;
+            }
+            if chars[start..j].iter().collect::<String>().eq_ignore_ascii_case("renderer") {
+                return true;
+            }
+            i = j.max(i + 1);
+        }
+        false
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1489,6 +1652,46 @@ pub fn run() {
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::config_store::{backup_corrupt_config, local_date};
+    use super::is_release_build;
+
+    /// 读取命令行的 NtQueryInformationProcess 路径是否可用（对自己进程读一次）。
+    #[test]
+    fn reads_own_command_line() {
+        let cmd = super::process_win::command_line(std::process::id())
+            .expect("should read own command line");
+        assert!(!cmd.trim().is_empty(), "command line should not be empty");
+    }
+    /// 渲染进程判定：只在引号外、开关位于开头或空白之后才认。
+    #[test]
+    fn detects_renderer_command_lines() {
+        use super::process_win::is_renderer_command_line;
+
+        assert!(is_renderer_command_line(
+            r#""C:\Program Files\Game\game.exe" --type=renderer --lang=ja"#
+        ));
+        assert!(is_renderer_command_line("game.exe --type=renderer"));
+        assert!(is_renderer_command_line(
+            r#"game.exe --type="renderer" --no-sandbox"#
+        ));
+        // 其他子进程类型
+        assert!(!is_renderer_command_line("game.exe --type=gpu-process"));
+        // 开关前面必须是空白
+        assert!(!is_renderer_command_line("game.exe --disable-type=renderer"));
+        // 引号内的不算命令行开关
+        assert!(!is_renderer_command_line(r#"game.exe "--type=renderer""#));
+        assert!(!is_renderer_command_line(""));
+        assert!(!is_renderer_command_line("plain.exe -foo bar"));
+    }
+    /// 本地构建（版本号还是占位 0.x）不能被当成发版，否则会一直提示"发现新版本"。
+    #[test]
+    fn detects_release_build_from_version() {
+        assert!(!is_release_build("0.1.0"));
+        assert!(!is_release_build("1.2.3"));
+        assert!(is_release_build("26.10.26"));
+        assert!(is_release_build("26.9.27"));
+        assert!(!is_release_build(""));
+        assert!(!is_release_build("abc"));
+    }
 
     /// `sysinfo` 升级后的运行时冒烟测试：确认仍能枚举到进程及其名称
     /// （避免"编译通过但列表为空/字段丢失"这类行为变化）。

@@ -9,9 +9,7 @@ use serde_json::Value;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::crypto::{
-    base64_encode, hmac_sha1_base64, hmac_sha256, md5_digest, md5_hex, sha256_hex,
-};
+use crate::crypto::{hmac_sha1_base64, hmac_sha256, md5_hex, sha256_hex};
 use crate::http::http_request;
 
 #[derive(Deserialize)]
@@ -409,138 +407,195 @@ fn baidu_translate(request: &TranslateRequest) -> Result<String, String> {
     Ok(out)
 }
 
-// ---- Aliyun（free 免费端点 / general+pro 签名端点） ----
+// ---- Aliyun（OpenAPI：通用版 TranslateGeneral / 专业版 Translate） ----
 
+/// 阿里云机器翻译（只有 OpenAPI 的通用版 / 专业版）。
+///
+/// 原来的 `free` 走 translate.alibaba.com 的网页接口，虽然没有鉴权、但会做敏感词
+/// 审查，稍微露骨一点的句子就直接失败，实用价值很低，已经删掉。旧配置里
+/// `version = "free"` 一律按通用版处理（凭据为空时会明确报错，而不是静默失败）。
 fn aliyun_translate(request: &TranslateRequest) -> Result<String, String> {
     let version = get_str(&request.settings, "version");
-    match version.as_str() {
-        "pro" | "general" => aliyun_signed(request, &version),
-        _ => aliyun_free(request),
-    }
+    aliyun_signed(request, &version)
 }
 
-fn aliyun_free(request: &TranslateRequest) -> Result<String, String> {
-    let token_url = "https://translate.alibaba.com/api/translate/csrftoken";
-    let token_resp = http_request("GET", token_url, &[], &[], timeout_of(request))?;
-    let token_text = to_string(token_resp)?;
-    let token_json: Value = serde_json::from_str(&token_text).map_err(|e| e.to_string())?;
-    let csrf = token_json
-        .get("token")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| format!("Aliyun CSRF token not found: {token_text}"))?;
-
-    let body = format!(
-        "srcLang={}&tgtLang={}&domain=general&query={}&_csrf={}",
-        request.source,
-        request.target,
-        percent_encode(&request.text),
-        percent_encode(csrf)
+/// 把 Unix 秒拆成 UTC 的 (年, 月, 日, 时, 分, 秒)。
+fn civil_utc(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let (h, mi, s) = (
+        (rem / 3600) as u32,
+        ((rem % 3600) / 60) as u32,
+        (rem % 60) as u32,
     );
-    let url = "https://translate.alibaba.com/api/translate/text";
-    let headers = vec!["Content-Type: application/x-www-form-urlencoded".to_string()];
-    let resp = http_request("POST", url, &headers, body.as_bytes(), timeout_of(request))?;
-    let text = to_string(resp)?;
-    let json: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    let translation = json_str(&json, &["data", "translateText"])
-        .ok_or_else(|| format!("Aliyun parse error: {text}"))?;
-    Ok(html_unescape(&translation))
-}
 
-fn gmt_now() -> String {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    let secs = now.as_secs() as i64;
-    let days = secs / 86400;
-    let rem = secs % 86400;
-    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
-    let weekday = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"][((days + 4) % 7) as usize];
-    let mut y = 1970i64;
-    let mut d = days;
+    let mut year = 1970i64;
+    let mut day = days;
     loop {
-        let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+        let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
         let len = if leap { 366 } else { 365 };
-        if d < len {
+        if day < len {
             break;
         }
-        d -= len;
-        y += 1;
+        day -= len;
+        year += 1;
     }
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
     let months = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let mut month = 0;
+    let mut month = 0usize;
     while month < 12 {
-        let mlen = if month == 1 && leap { 29 } else { months[month] };
-        if d < mlen {
+        let len = if month == 1 && leap { 29 } else { months[month] };
+        if day < len {
             break;
         }
-        d -= mlen;
+        day -= len;
         month += 1;
     }
-    let mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month];
-    format!("{weekday}, {d:02} {mon} {y} {h:02}:{m:02}:{s:02} GMT")
+    (year, month as u32 + 1, day as u32 + 1, h, mi, s)
 }
 
-fn aliyun_signed(request: &TranslateRequest, version: &str) -> Result<String, String> {
-    let auth_key = get_str(&request.settings, "authKey");
-    let (access_key_id, access_key_secret) = match auth_key.split_once('|') {
-        Some((id, key)) if !id.is_empty() && !key.is_empty() => (id.trim(), key.trim()),
-        _ => return Err("Aliyun API key must be \"AccessKeyId|AccessKeySecret\".".to_string()),
-    };
+/// 阿里云 RPC 要求的时间戳格式：`YYYY-MM-DDTHH:MM:SSZ`（UTC，不带毫秒）。
+fn iso8601_utc_now() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let (y, mo, d, h, mi, s) = civil_utc(secs);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
+}
 
-    let api_path = if version == "pro" {
-        "/api/translate/web/ecommerce"
-    } else {
-        "/api/translate/web/general"
-    };
+/// `SignatureNonce`：只要短时间窗口内唯一即可，用纳秒 + 进程号 + 序号拼成 UUID 形状。
+fn aliyun_nonce() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    let payload = serde_json::json!({
-        "FormatType": "text",
-        "SourceLanguage": request.source,
-        "TargetLanguage": request.target,
-        "SourceText": request.text,
-        "Scene": "general",
-    });
-    let body = payload.to_string();
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed) as u16;
+    let pid = std::process::id() as u16;
+    format!(
+        "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
+        (nanos >> 32) & 0xffff_ffff,
+        (nanos >> 16) & 0xffff,
+        seq & 0x0fff,
+        pid,
+        nanos & 0xffff_ffff_ffff
+    )
+}
 
-    let content_md5 = base64_encode(&md5_digest(body.as_bytes()));
-    let date = gmt_now();
-    let nonce = format!(
-        "{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    );
-    let accept = "application/json";
-    let content_type = "application/json;charset=utf-8";
+/// 参数按 key 排序后做 RFC3986 编码，得到待签名 query（也就是表单 body 的前半段）。
+fn aliyun_canonical(params: &[(String, String)]) -> String {
+    let mut sorted: Vec<&(String, String)> = params.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    sorted
+        .iter()
+        .map(|(k, v)| format!("{}={}", percent_encode(k), percent_encode(v)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
 
+/// 阿里云 RPC 签名：
+/// `base64(HMAC-SHA1(secret + "&", METHOD + "&" + encode("/") + "&" + encode(canonicalQuery)))`。
+fn aliyun_sign(method: &str, params: &[(String, String)], access_key_secret: &str) -> String {
     let string_to_sign = format!(
-        "POST\n{accept}\n{content_md5}\n{content_type}\n{date}\nx-acs-signature-method:HMAC-SHA1\nx-acs-signature-nonce:{nonce}\nx-acs-version:2019-01-02\n{api_path}"
+        "{method}&{}&{}",
+        percent_encode("/"),
+        percent_encode(&aliyun_canonical(params))
     );
-    let signature = hmac_sha1_base64(access_key_secret, &string_to_sign);
-    let authorization = format!("acs {access_key_id}:{signature}");
+    hmac_sha1_base64(&format!("{access_key_secret}&"), &string_to_sign)
+}
 
-    let url = format!("https://mt.aliyuncs.com{api_path}");
-    let headers = vec![
-        format!("Accept: {accept}"),
-        format!("Content-Type: {content_type}"),
-        format!("Content-MD5: {content_md5}"),
-        format!("Date: {date}"),
-        format!("Authorization: {authorization}"),
-        "x-acs-signature-method: HMAC-SHA1".to_string(),
-        format!("x-acs-signature-nonce: {nonce}"),
-        "x-acs-version: 2019-01-02".to_string(),
+/// 响应里的 `Code` 既可能是字符串 `"200"` 也可能是数字 `200`，也可能不存在（成功时）。
+fn json_code(json: &Value) -> Option<String> {
+    match json.get("Code") {
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// 阿里云机器翻译（OpenAPI RPC 风格）。
+///
+/// 旧实现是 ROA 风格：`Authorization: acs {id}:{sig}` + `x-acs-signature-*` 头部，
+/// 时间放在 HTTP `Date` 头里。这套签名请求 `mt.aliyuncs.com` 会一直被拒：
+/// 该接口按 RPC 规则从**表单参数** `Timestamp` 里取时间，头部那套它根本不读，
+/// 于是表现成 `InvalidTimeStamp.Expired`（"没有可用的时间戳"）。
+///
+/// 现在与阿里云文档 / translator-go 的实现保持一致：
+/// 全部参数走表单、按 key 排序做 RFC3986 编码、HMAC-SHA1 签名，版本固定 `2018-10-12`。
+fn aliyun_signed(request: &TranslateRequest, version: &str) -> Result<String, String> {
+    // 新版配置是两个独立字段。旧配置把它们用 `|` 拼在 `authKey` 里（前端
+    // `mergeConfig` 会迁移），这里保留兜底，覆盖"被旧版本写回的配置"这种情况。
+    let mut access_key_id = get_str(&request.settings, "accessKeyId");
+    let mut access_key_secret = get_str(&request.settings, "accessKeySecret");
+    if access_key_id.trim().is_empty() || access_key_secret.trim().is_empty() {
+        if let Some((id, secret)) = get_str(&request.settings, "authKey").split_once('|') {
+            if access_key_id.trim().is_empty() {
+                access_key_id = id.trim().to_string();
+            }
+            if access_key_secret.trim().is_empty() {
+                access_key_secret = secret.trim().to_string();
+            }
+        }
+    }
+    let access_key_id = access_key_id.trim().to_string();
+    let access_key_secret = access_key_secret.trim().to_string();
+    if access_key_id.is_empty() || access_key_secret.is_empty() {
+        return Err(
+            "Aliyun needs both AccessKey ID and AccessKey Secret (from the RAM console)."
+                .to_string(),
+        );
+    }
+
+    // pro = Translate（专业版），general = TranslateGeneral（通用版）。
+    let action = if version == "pro" {
+        "Translate"
+    } else {
+        "TranslateGeneral"
+    };
+    let params: Vec<(String, String)> = vec![
+        ("AccessKeyId".to_string(), access_key_id.clone()),
+        ("Action".to_string(), action.to_string()),
+        ("Format".to_string(), "JSON".to_string()),
+        ("FormatType".to_string(), "text".to_string()),
+        ("Scene".to_string(), "general".to_string()),
+        ("SignatureMethod".to_string(), "HMAC-SHA1".to_string()),
+        ("SignatureNonce".to_string(), aliyun_nonce()),
+        ("SignatureVersion".to_string(), "1.0".to_string()),
+        ("SourceLanguage".to_string(), request.source.clone()),
+        ("SourceText".to_string(), request.text.clone()),
+        ("TargetLanguage".to_string(), request.target.clone()),
+        ("Timestamp".to_string(), iso8601_utc_now()),
+        ("Version".to_string(), "2018-10-12".to_string()),
     ];
-    let resp = http_request("POST", &url, &headers, body.as_bytes(), timeout_of(request))?;
+
+    let signature = aliyun_sign("POST", &params, &access_key_secret);
+    let mut body = aliyun_canonical(&params);
+    body.push_str("&Signature=");
+    body.push_str(&percent_encode(&signature));
+
+    let headers = vec![
+        "Content-Type: application/x-www-form-urlencoded; charset=utf-8".to_string(),
+        "Accept: application/json".to_string(),
+    ];
+    let resp = http_request(
+        "POST",
+        "https://mt.aliyuncs.com/",
+        &headers,
+        body.as_bytes(),
+        timeout_of(request),
+    )?;
     let text = to_string(resp)?;
     let json: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    if let Some(code) = json.get("Code").and_then(|x| x.as_str()) {
+    if let Some(code) = json_code(&json) {
         if code != "200" {
             let msg = json.get("Message").and_then(|x| x.as_str()).unwrap_or("");
             return Err(format!("Aliyun error ({code}): {msg}"));
         }
     }
     json_str(&json, &["Data", "Translated"])
-        .or_else(|| json_str(&json, &["data", "translated"]))
         .ok_or_else(|| format!("Aliyun parse error: {text}"))
 }
 
@@ -1122,5 +1177,59 @@ mod tests {
         // 绕过缓存后仍会写回缓存。
         cache_put(&db.lock().unwrap(), &request(true), "您好").unwrap();
         assert_eq!(translate(&db, request(false)).unwrap().translation, "您好");
+    }
+    /// 阿里云 RPC 签名文档里的 DescribeRegions 例子（与 translator-go 的用例一致）。
+    #[test]
+    fn aliyun_signature_matches_documented_example() {
+        let params = vec![
+            ("AccessKeyId".to_string(), "testid".to_string()),
+            ("Action".to_string(), "DescribeRegions".to_string()),
+            ("Format".to_string(), "XML".to_string()),
+            ("SignatureMethod".to_string(), "HMAC-SHA1".to_string()),
+            (
+                "SignatureNonce".to_string(),
+                "3ee8c1b8-83d3-44af-a94f-4e0ad82fd6cf".to_string(),
+            ),
+            ("SignatureVersion".to_string(), "1.0".to_string()),
+            (
+                "Timestamp".to_string(),
+                "2016-02-23T12:46:24Z".to_string(),
+            ),
+            ("Version".to_string(), "2014-05-26".to_string()),
+        ];
+        assert_eq!(
+            aliyun_sign("GET", &params, "testsecret"),
+            "OLeaidS1JvxuMvnyHOwuJ+uX5qY="
+        );
+    }
+
+    /// 参数必须按 key 排序，并按 RFC3986 编码（空格 %20、`*` %2A）。
+    #[test]
+    fn aliyun_canonical_sorts_and_encodes() {
+        let params = vec![
+            ("b".to_string(), "2".to_string()),
+            ("a".to_string(), "1 2".to_string()),
+            ("c".to_string(), "x*y".to_string()),
+        ];
+        assert_eq!(aliyun_canonical(&params), "a=1%202&b=2&c=x%2Ay");
+    }
+
+    /// 时间戳必须是 `YYYY-MM-DDTHH:MM:SSZ`（20 字符、UTC、无毫秒）。
+    #[test]
+    fn iso8601_timestamp_has_rpc_shape() {
+        let stamp = iso8601_utc_now();
+        assert_eq!(stamp.len(), 20, "意外格式：{stamp}");
+        assert!(stamp.ends_with('Z'), "意外格式：{stamp}");
+        assert_eq!(&stamp[10..11], "T", "意外格式：{stamp}");
+        assert_eq!(&stamp[4..5], "-", "意外格式：{stamp}");
+    }
+
+    /// nonce 每次都要不同（同一纳秒内也要靠序号区分）。
+    #[test]
+    fn aliyun_nonce_is_unique() {
+        let a = aliyun_nonce();
+        let b = aliyun_nonce();
+        assert_ne!(a, b);
+        assert_eq!(a.len(), 36, "应是 UUID 形状：{a}");
     }
 }

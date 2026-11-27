@@ -569,14 +569,15 @@ export const TRANSLATOR_DEFS: TranslatorDef[] = [
     id: "aliyun",
     nameKey: "extensions.aliyun",
     fields: [
-      { key: "version", labelKey: "extensions.edition", type: "select", options: ["free", "general", "pro"] },
+      // free 端点已删除（网页接口有敏感词审查，基本不可用），只剩通用版 / 专业版。
+      { key: "version", labelKey: "extensions.edition", type: "select", options: ["general", "pro"] },
       {
-        key: "authKey",
-        labelKey: "extensions.apiKey",
-        type: "password",
-        placeholder: "AccessKeyId|AccessKeySecret",
+        key: "accessKeyId",
+        labelKey: "extensions.accessKeyId",
+        placeholder: "LTAI...",
         helpKey: "extensions.aliyunKeyHint",
       },
+      { key: "accessKeySecret", labelKey: "extensions.accessKeySecret", type: "password" },
     ],
     languages: ALIYUN_LANGUAGES,
     defaultSource: "ja",

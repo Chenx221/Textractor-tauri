@@ -190,7 +190,7 @@
     "filterFile": "过滤表文件",
     "fileHint": "可选：每行一个正则表达式",
     "replacerFileHint": "|ORIG|原文|BECOMES|替换|END| 格式",
-    "aliyunKeyHint": "general/pro 版：AccessKeyId|AccessKeySecret",
+    "aliyunKeyHint": "在阿里云控制台创建有机器翻译权限的 RAM 用户，把它的 AccessKey ID 与 Secret 分别填到下面两栏。",
     "bingKeyHint": "可选：Azure 订阅密钥（留空使用免费端点）",
     "sourceLanguage": "源语言",
     "targetLanguage": "目标语言",
@@ -202,7 +202,9 @@
     "wsServerPort": "服务端端口",
     "wsServerIncludeClipboard": "包含剪切板文本",
     "wsClient": "WebSocket 客户端",
-    "wsClientUrl": "服务器地址"
+    "wsClientUrl": "服务器地址",
+    "accessKeyId": "AccessKey ID",
+    "accessKeySecret": "AccessKey Secret"
   },
   "cache": {
     "title": "翻译缓存",
@@ -295,7 +297,9 @@
     "cancel": "取消",
     "attachedTo": "已附加到 {{name}} (PID {{pid}})",
     "forgot": "已忘记 {{name}}",
-    "noResults": "没有匹配的进程"
+    "noResults": "没有匹配的进程",
+    "renderer": "渲染进程",
+    "rendererHint": "Chromium 渲染进程（--type=renderer）。这类进程没有窗口标题，但内嵌浏览器 / Electron 游戏的文本通常就在这里。"
   },
   "hook": {
     "code": "Hook 代码",

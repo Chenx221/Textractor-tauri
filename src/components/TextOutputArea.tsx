@@ -15,6 +15,28 @@ interface TextOutputAreaProps {
   onDelete: (id: string) => void;
 }
 
+/** 从 DOM 节点往上找所属文本块的索引（容器上写了 `data-index`）。 */
+function blockIndexFromNode(node: Node | null): number | null {
+  let el: Element | null = node instanceof Element ? node : (node?.parentElement ?? null);
+  while (el) {
+    const raw = (el as HTMLElement).dataset?.index;
+    if (raw !== undefined) {
+      const index = Number(raw);
+      return Number.isFinite(index) ? index : null;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/** 单个文本块 → 纯文本（与块内"复制原文+译文"按钮保持一致的排版）。 */
+function blockToText(block: TextBlock): string {
+  const done = block.translations
+    .filter((entry) => entry.state === "done" && entry.text)
+    .map((entry) => entry.text);
+  return done.length > 0 ? `${block.original}\n\n${done.join("\n")}` : block.original;
+}
+
 export function TextOutputArea({ blocks, onDelete }: TextOutputAreaProps) {
   const { t } = useTranslation();
   const { hasEnabledTranslationProvider } = useExtensions();
@@ -57,6 +79,57 @@ export function TextOutputArea({ blocks, onDelete }: TextOutputAreaProps) {
   };
 
   useEffect(() => () => window.clearTimeout(userScrollTimerRef.current), []);
+
+  // ---- 跨块复制的兜底 ----
+  // 虚拟滚动只挂载可视区附近的块：从头一路拖选滚到底部时，上面那些块的 DOM
+  // 早已卸载（或整块被复用），浏览器只能复制到最后一个还挂载的小片段。
+  // 这里在 copy 事件里判断选区是否跨越了"未挂载"的块，是的话直接按数据模型
+  // 重建整段文本，保证复制到的内容与看到的一致。
+  const selectionAnchorRef = useRef<number | null>(null);
+
+  const handleCopy = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+    const container = parentRef.current;
+    if (!container) return;
+    const range = selection.getRangeAt(0);
+    // Ctrl+A 之类"选中整个列表"：AnchorNode 是容器本身，没有 data-index。
+    const selectAll = selection.containsNode(container, true);
+    const mounted = new Set(virtualizer.getVirtualItems().map((item) => item.index));
+
+    const liveStart = selectAll ? 0 : blockIndexFromNode(range.startContainer);
+    const liveEnd = selectAll ? blocks.length - 1 : blockIndexFromNode(range.endContainer);
+    if (liveEnd === null) return;
+
+    let start = liveStart;
+    const anchor = selectionAnchorRef.current;
+    if (!selectAll && anchor !== null) {
+      if (start === null) {
+        // 起点的 DOM 整个没了（拖到底部后顶部块被卸载）。
+        start = anchor;
+      } else if (!mounted.has(anchor) && anchor < start) {
+        // 起点被虚拟滚动卸掉后，浏览器会把选区截断到第一个还挂载的块；
+        // 用 mousedown 时记下的真实起点还原。
+        start = anchor;
+      }
+    }
+    if (start === null) return;
+
+    const from = Math.max(0, Math.min(start, liveEnd));
+    const to = Math.min(blocks.length - 1, Math.max(start, liveEnd));
+    if (to <= from) return; // 单块：交给浏览器默认行为，保留块内的精确选择
+
+    // 区间内的块全都还挂载着 → 浏览器自己就复制得对，不要干预。
+    for (let i = from; i <= to; i += 1) {
+      if (mounted.has(i)) continue;
+      event.preventDefault();
+      event.clipboardData.setData(
+        "text/plain",
+        blocks.slice(from, to + 1).map(blockToText).join("\n\n"),
+      );
+      return;
+    }
+  };
 
   const handleScroll = () => {
     const el = parentRef.current;
@@ -104,6 +177,12 @@ export function TextOutputArea({ blocks, onDelete }: TextOutputAreaProps) {
       <Box
         ref={parentRef}
         onScroll={handleScroll}
+        onCopy={handleCopy}
+        onMouseDown={(e) => {
+          // 记录拖选起点所属的块：滚到底部后顶部块的 DOM 已被卸载，
+          // copy 时拿不到锚点，只能用这里记下的索引。
+          selectionAnchorRef.current = blockIndexFromNode(e.target as Node);
+        }}
         onWheel={markUserScroll}
         onTouchStart={markUserScroll}
         onTouchMove={markUserScroll}

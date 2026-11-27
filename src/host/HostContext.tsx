@@ -90,6 +90,7 @@ function fallbackProcessInfo(pid: number): ProcessInfo {
     arch: "",
     has_file: false,
     is_system: false,
+    is_renderer: false,
     icon: null,
   };
 }

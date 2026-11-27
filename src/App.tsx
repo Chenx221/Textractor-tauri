@@ -28,6 +28,11 @@ interface SystemInfo {
   bitness: string;
 }
 
+/** `get_build_info` 里只用得上的两个字段（About 对话框另有一份完整定义）。 */
+interface BuildFlags {
+  official: boolean;
+}
+
 function isTauri(): boolean {
   return "__TAURI_INTERNALS__" in window;
 }
@@ -71,14 +76,21 @@ export default function App() {
     let disposed = false;
     const timer = window.setTimeout(() => {
       void (async () => {
-        // 应用本体更新更重要，有就先报它。
-        const appVersion = await checkForUpdateVersion();
+        // 本地构建（版本号还是仓库里的占位 0.x）跳过应用本体的更新检查：
+        // 它永远比线上发版"旧"，提示了也没意义，装上去还会把本地构建覆盖掉。
+        const build = await invoke<BuildFlags>("get_build_info").catch(() => null);
         if (disposed) return;
-        if (appVersion) {
-          setUpdateNotice({ kind: "app", version: appVersion });
-          return;
+        if (build?.official) {
+          // 应用本体更新更重要，有就先报它。
+          const appVersion = await checkForUpdateVersion();
+          if (disposed) return;
+          if (appVersion) {
+            setUpdateNotice({ kind: "app", version: appVersion });
+            return;
+          }
         }
-        // texthook 组件更新（带 24h 节流，走缓存时不联网）。
+        // texthook 组件更新（带 24h 节流，走缓存时不联网）。本地构建也需要它：
+        // 注入用的 DLL 和本机编译的 exe 是独立的。
         const texthookVersion = await checkTexthookSilently();
         if (!disposed && texthookVersion) {
           setUpdateNotice({ kind: "texthook", version: texthookVersion });

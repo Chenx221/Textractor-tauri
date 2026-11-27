@@ -67,6 +67,8 @@ type ResizeDir =
 const HISTORY_BATCH = 50;
 /** 悬浮窗本地保留的历史缓冲上限（含实时块），超出丢弃最旧的。 */
 const MAX_HISTORY_BUFFER = 300;
+/** 暂停期间的上限：要保证用户钉住的那条不会被挤出去。 */
+const MAX_PAUSED_BUFFER = 2000;
 /** 自动高度：内容高度（含上下内边距）的裁剪范围。 */
 const HEIGHT_MIN = 72;
 const HEIGHT_MAX = 800;
@@ -192,7 +194,13 @@ export function ExtraWindowApp() {
         return;
       }
       const appended = [...prev, block];
-      const overflow = Math.max(0, appended.length - MAX_HISTORY_BUFFER);
+      // 暂停时把缓冲上限放大：否则缓冲一满，用户钉住的那条会被挤出缓冲，
+      // 光标被 clamp 到 0 之后，每来一条新文本显示内容就往后挪一格 ——
+      // 表现就是"暂停着，悬浮窗自己往前翻"。上限与主窗口每线程上限一致，
+      // 实际上不可能在暂停期间被撑爆。
+      const holding = block.hold || pinnedIdRef.current !== null;
+      const cap = holding ? MAX_PAUSED_BUFFER : MAX_HISTORY_BUFFER;
+      const overflow = Math.max(0, appended.length - cap);
       // 暂停开始那一刻正在显示的条目（在截断之前取，避免溢出导致的索引偏移）。
       if (block.hold && pinnedIdRef.current === null) {
         pinnedIdRef.current = prev[cursorRef.current]?.id ?? "";
@@ -202,7 +210,12 @@ export function ExtraWindowApp() {
       if (block.hold) {
         // 主窗口暂停中：只把新文本记进历史（避免恢复后历史出现空洞），
         // 但不切换显示 —— 继续显示暂停那一刻的那条。
-        if (overflow > 0) setCursorBoth(Math.max(0, cursorRef.current - overflow));
+        if (overflow > 0) {
+          // 按 id 重新定位（而不是简单减 overflow），万一被裁到也不会跑偏。
+          const pinned = pinnedIdRef.current;
+          const index = pinned ? next.findIndex((entry) => entry.id === pinned) : -1;
+          setCursorBoth(index >= 0 ? index : Math.max(0, cursorRef.current - overflow));
+        }
         return;
       }
       if (resumeToTail()) return;
